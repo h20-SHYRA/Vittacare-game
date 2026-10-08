@@ -1,298 +1,311 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Trophy,
+  Sparkles,
+  Shield,
+  Heart,
+  Zap,
   RotateCcw,
   ChevronRight,
-  ArrowUp,
-  Zap,
-  Sun,
-  Gauge,
-  Building2,
+  Lock,
+  CheckCircle2,
   Maximize2,
   Minimize2,
-  Users,
+  Award,
+  Flag,
+  Shirt,
+  Smartphone,
+  Music,
 } from 'lucide-react';
 import {
   CAMPAIGN_PHASES,
+  CharacterId,
   NURSES,
   PHASE5_EDUCATIONAL_MESSAGES,
-  CharacterId,
+  PHASE10_EDUCATIONAL_MESSAGES,
+  PHASE17_EDUCATIONAL_MESSAGES,
+  SkinId,
 } from '../data/gameData';
+import { PixelNurseAvatar } from './PixelNurseAvatar';
 import { soundFX } from '../utils/sound';
 import {
-  drawPixelNurse,
-  drawPixelEnemy,
-  drawPixelBoss,
-  drawPixelClinicaVittacare,
-} from '../utils/pixelArt';
-import { PixelNurseAvatar } from './PixelNurseAvatar';
+  buildLevelData,
+  BossEntity,
+  CheckpointFlag,
+  Collectible,
+  Enemy,
+  FloatingText,
+  LightningEffect,
+  Particle,
+  Platform,
+  Projectile,
+  QuestionBlock,
+} from './gameTypes';
+import { renderPlatformerCanvas } from './gameRenderer';
 
 interface MarioPlatformerGameProps {
   phaseNumber: number;
+  maxUnlockedPhase: number;
+  completedPhases: number[];
   goldenSkinEquipped: boolean;
+  characterSkins: Record<CharacterId, SkinId>;
   selectedCharacterIdx: number;
   onSelectCharacterIdx: (idx: number) => void;
   onPhaseComplete: (phaseNum: number) => void;
   onSelectPhase: (phaseNum: number) => void;
   onOpenFinale: () => void;
+  onOpenWardrobe: () => void;
   onToggleGoldenSkin: () => void;
 }
 
-type DifficultyTier = 'NORMAL' | 'HARD' | 'EXPERT';
-
-interface Platform {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  type: 'ground' | 'brick' | 'moving' | 'cloud';
-  vx?: number;
-  minX?: number;
-  maxX?: number;
-}
-
-interface QuestionBlock {
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  hit: boolean;
-  bounceY: number;
-  itemSymbol: string;
-  itemLabel: string;
-  eduText: string;
-  isTrueInfo?: boolean;
-}
-
-interface Collectible {
-  id: string;
-  x: number;
-  y: number;
-  vy: number;
-  symbol: string;
-  label: string;
-  collected: boolean;
-  floatPhase: number;
-}
-
-interface ShadowEnemy {
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  vx: number;
-  vy: number;
-  minX: number;
-  maxX: number;
-  alive: boolean;
-  type: 'walker' | 'jumper' | 'wave' | 'fragment' | 'meteor';
-  label?: string;
-  jumpTimer?: number;
-}
-
-interface Projectile {
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  color: string;
-  nurseId: string;
-  radius: number;
-}
-
-interface FloatingText {
-  id: string;
-  x: number;
-  y: number;
-  text: string;
-  color: string;
-  life: number;
-  maxLife: number;
-}
-
-interface HealthPedestal {
-  id: string;
-  x: number;
-  y: number;
-  label: string;
-  nurseName: string;
-  color: string;
-  hp: number;
-  shieldedTimer: number;
-}
-
-const CANVAS_W = 1080;
-const CANVAS_H = 480;
-const GRAVITY = 0.58;
+const CANVAS_W = 960;
+const CANVAS_H = 500;
 
 export const MarioPlatformerGame: React.FC<MarioPlatformerGameProps> = ({
   phaseNumber,
+  maxUnlockedPhase,
+  completedPhases,
   goldenSkinEquipped,
+  characterSkins,
   selectedCharacterIdx,
   onSelectCharacterIdx,
   onPhaseComplete,
   onSelectPhase,
   onOpenFinale,
+  onOpenWardrobe,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const joystickBaseRef = useRef<HTMLDivElement | null>(null);
 
-  const currentPhaseData =
-    CAMPAIGN_PHASES.find((p) => p.phaseNumber === phaseNumber) || CAMPAIGN_PHASES[0];
-
-  const isBoss5 = phaseNumber === 5;
-  const isBoss10 = phaseNumber === 10;
-  const isBossStage = isBoss5 || isBoss10;
-
-  const [difficultyTier, setDifficultyTier] = useState<DifficultyTier>('NORMAL');
   const [activeNurseIndex, setActiveNurseIndex] = useState<number>(selectedCharacterIdx);
-  const [playerHp, setPlayerHp] = useState<number>(100);
-  const [score, setScore] = useState<number>(0);
-  const [itemsCount, setItemsCount] = useState<number>(0);
-  const [bossHp, setBossHp] = useState<number>(100);
-  const [boss10Stage, setBoss10Stage] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [stageProgressText, setStageProgressText] = useState<string>('');
-  const [eduBannerText, setEduBannerText] = useState<string>(currentPhaseData.educationalTip);
-  const [victoryState, setVictoryState] = useState<boolean>(false);
-  const [walkingToClinic, setWalkingToClinic] = useState<boolean>(false);
-  const [distanceToGoalMeters, setDistanceToGoalMeters] = useState<number>(100);
-  const [isFullscreenLandscape, setIsFullscreenLandscape] = useState<boolean>(false);
+  const [hpUI, setHpUI] = useState<number>(100);
+  const [scoreUI, setScoreUI] = useState<number>(0);
+  const [collectedUI, setCollectedUI] = useState<number>(0);
+  const [requiredUI, setRequiredUI] = useState<number>(4);
+  const [objectiveTextUI, setObjectiveTextUI] = useState<string>('');
+  const [checkpointReachedUI, setCheckpointReachedUI] = useState<boolean>(false);
+  const [levelClearedUI, setLevelClearedUI] = useState<boolean>(false);
+  const [educationalBannerUI, setEducationalBannerUI] = useState<string>('');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isRotated90, setIsRotated90] = useState<boolean>(false);
+  const [lofiEnabled, setLofiEnabled] = useState<boolean>(soundFX.musicEnabled);
+  const [joystickVec, setJoystickVec] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const joystickTouchIdRef = useRef<number | null>(null);
+  const joystickCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Virtual Analog Joystick UI State
-  const [joyPos, setJoyPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [joyActive, setJoyActive] = useState<boolean>(false);
-  const joyJumpTriggeredRef = useRef<boolean>(false);
+  const currentPhaseMeta =
+    CAMPAIGN_PHASES.find((p) => p.phaseNumber === phaseNumber) || CAMPAIGN_PHASES[0];
+  const activeNurse = NURSES[activeNurseIndex] || NURSES[0];
 
-  const getDifficultyMultiplier = useCallback(
-    (phaseNum: number, tier: DifficultyTier) => {
-      const phaseScale = 1 + (phaseNum - 1) * 0.11;
-      const tierScale = tier === 'NORMAL' ? 1.0 : tier === 'HARD' ? 1.3 : 1.6;
-      return phaseScale * tierScale;
+  const gameRef = useRef<{
+    phaseNum: number;
+    frame: number;
+    cameraX: number;
+    worldWidth: number;
+    playerX: number;
+    playerY: number;
+    playerW: number;
+    playerH: number;
+    playerVx: number;
+    playerVy: number;
+    facing: 1 | -1;
+    grounded: boolean;
+    jumpsUsed: number;
+    hp: number;
+    maxHp: number;
+    score: number;
+    combo: number;
+    collectedCount: number;
+    requiredItems: number;
+    respawnX: number;
+    respawnY: number;
+    activeNurseIdx: number;
+    goldenSkin: boolean;
+    invulnFrames: number;
+    skillCooldown: number;
+    orbitalShieldTimer: number;
+    speedBoostTimer: number;
+    emeraldShieldTimer: number;
+    slowTimer: number;
+    levelCleared: boolean;
+    clinicArrivalSequence: boolean;
+    clinicDoorProgress: number;
+    educationalBanner: string;
+    educationalBannerTimer: number;
+    keys: { left: boolean; right: boolean; up: boolean };
+    platforms: Platform[];
+    questionBlocks: QuestionBlock[];
+    collectibles: Collectible[];
+    checkpoints: CheckpointFlag[];
+    enemies: Enemy[];
+    projectiles: Projectile[];
+    lightningEffects: LightningEffect[];
+    particles: Particle[];
+    floatingTexts: FloatingText[];
+    boss: BossEntity | null;
+    goalX: number;
+    clinicX: number | null;
+  }>({
+    phaseNum: phaseNumber,
+    frame: 0,
+    cameraX: 0,
+    worldWidth: 2400,
+    playerX: 80,
+    playerY: 320,
+    playerW: 45,
+    playerH: 60,
+    playerVx: 0,
+    playerVy: 0,
+    facing: 1,
+    grounded: false,
+    jumpsUsed: 0,
+    hp: 100,
+    maxHp: 100,
+    score: 0,
+    combo: 1,
+    collectedCount: 0,
+    requiredItems: 4,
+    respawnX: 80,
+    respawnY: 320,
+    activeNurseIdx: selectedCharacterIdx,
+    goldenSkin: goldenSkinEquipped,
+    invulnFrames: 0,
+    skillCooldown: 0,
+    orbitalShieldTimer: 0,
+    speedBoostTimer: 0,
+    emeraldShieldTimer: 0,
+    slowTimer: 0,
+    levelCleared: false,
+    clinicArrivalSequence: false,
+    clinicDoorProgress: 0,
+    educationalBanner: '',
+    educationalBannerTimer: 0,
+    keys: { left: false, right: false, up: false },
+    platforms: [],
+    questionBlocks: [],
+    collectibles: [],
+    checkpoints: [],
+    enemies: [],
+    projectiles: [],
+    lightningEffects: [],
+    particles: [],
+    floatingTexts: [],
+    boss: null,
+    goalX: 2100,
+    clinicX: null,
+  });
+
+  const spawnParticles = useCallback(
+    (x: number, y: number, color: string, count = 10) => {
+      const g = gameRef.current;
+      for (let i = 0; i < count; i++) {
+        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+        const spd = 1.5 + Math.random() * 3.5;
+        g.particles.push({
+          x,
+          y,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd - 1.2,
+          color,
+          size: 4 + Math.random() * 3,
+          life: 26 + Math.floor(Math.random() * 14),
+        });
+      }
     },
     []
   );
 
-  const gameRef = useRef<{
-    keys: Record<string, boolean>;
-    joyX: number; // -1 to 1 from virtual analog joystick
-    activeNurseIdx: number;
-    goldenSkin: boolean;
-    diffMult: number;
-    player: {
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      vx: number;
-      vy: number;
-      facing: 1 | -1;
-      onGround: boolean;
-      jumpsLeft: number;
-      invulnTimer: number;
-      slowTimer: number;
-      shieldTimer: number;
-      animFrame: number;
-      hp: number;
-    };
-    cameraX: number;
-    levelWidth: number;
-    arenaLockWidth: number;
-    platforms: Platform[];
-    qBlocks: QuestionBlock[];
-    collectibles: Collectible[];
-    enemies: ShadowEnemy[];
-    projectiles: Projectile[];
-    floatingTexts: FloatingText[];
-    pedestals: HealthPedestal[];
-    unionOrbs: { id: string; x: number; y: number; nurseIdx: number; activated: boolean }[];
-    boss: {
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      hp: number;
-      maxHp: number;
-      vx: number;
-      vy: number;
-      attackTimer: number;
-      hitFlash: number;
-      stage10: 1 | 2 | 3 | 4 | 5;
-      stage1Hits: number;
-      stage2Collected: number;
-      stage3Timer: number;
-      defeated: boolean;
-    };
-    goalX: number;
-    clinicX: number;
-    itemsCollected: number;
-    score: number;
-    skillCd: number;
-    victory: boolean;
-    finaleWalkMode: boolean;
-    clinicDoorOpen: number;
-  }>({
-    keys: {},
-    joyX: 0,
-    activeNurseIdx: 0,
-    goldenSkin: goldenSkinEquipped,
-    diffMult: 1,
-    player: {
-      x: 80,
-      y: 340,
-      w: 50,
-      h: 70,
-      vx: 0,
-      vy: 0,
-      facing: 1,
-      onGround: false,
-      jumpsLeft: 2,
-      invulnTimer: 0,
-      slowTimer: 0,
-      shieldTimer: 0,
-      animFrame: 0,
-      hp: 100,
+  const addFloatingText = useCallback((x: number, y: number, text: string, color = '#fde047') => {
+    gameRef.current.floatingTexts.push({ x, y, text, color, life: 45 });
+  }, []);
+
+  const showEducationalMessage = useCallback((msg: string) => {
+    const g = gameRef.current;
+    g.educationalBanner = msg;
+    g.educationalBannerTimer = 210;
+    setEducationalBannerUI(msg);
+  }, []);
+
+  const initLevel = useCallback(
+    (targetPhase: number) => {
+      const data = buildLevelData(targetPhase);
+      const g = gameRef.current;
+      g.phaseNum = targetPhase;
+      g.frame = 0;
+      g.cameraX = 0;
+      g.worldWidth = data.worldWidth;
+      g.playerX = 80;
+      g.playerY = 320;
+      g.playerVx = 0;
+      g.playerVy = 0;
+      g.facing = 1;
+      g.grounded = false;
+      g.jumpsUsed = 0;
+      g.hp = 100;
+      g.maxHp = 100;
+      g.combo = 1;
+      g.collectedCount = 0;
+      g.requiredItems = data.requiredItems;
+      g.respawnX = 80;
+      g.respawnY = 320;
+      g.invulnFrames = 0;
+      g.skillCooldown = 0;
+      g.orbitalShieldTimer = 0;
+      g.speedBoostTimer = 0;
+      g.emeraldShieldTimer = 0;
+      g.slowTimer = 0;
+      g.levelCleared = false;
+      g.clinicArrivalSequence = false;
+      g.clinicDoorProgress = 0;
+      g.platforms = data.platforms;
+      g.questionBlocks = data.questionBlocks;
+      g.collectibles = data.collectibles;
+      g.checkpoints = data.checkpoints;
+      g.enemies = data.enemies;
+      g.projectiles = [];
+      g.lightningEffects = [];
+      g.particles = [];
+      g.floatingTexts = [];
+      g.boss = data.boss;
+      g.goalX = data.goalX;
+      g.clinicX = data.clinicX;
+
+      const phaseMeta =
+        CAMPAIGN_PHASES.find((p) => p.phaseNumber === targetPhase) ||
+        CAMPAIGN_PHASES[0];
+      showEducationalMessage(`Fase ${targetPhase}: ${phaseMeta.educationalTip}`);
+
+      setHpUI(100);
+      setCollectedUI(0);
+      setRequiredUI(data.requiredItems);
+      setObjectiveTextUI(data.objectiveTitle);
+      setCheckpointReachedUI(false);
+      setLevelClearedUI(false);
+
+      soundFX.startLoFiMusic(targetPhase);
     },
-    cameraX: 0,
-    levelWidth: 2400,
-    arenaLockWidth: 1080,
-    platforms: [],
-    qBlocks: [],
-    collectibles: [],
-    enemies: [],
-    projectiles: [],
-    floatingTexts: [],
-    pedestals: [],
-    unionOrbs: [],
-    boss: {
-      x: 760,
-      y: 130,
-      w: 168,
-      h: 180,
-      hp: 100,
-      maxHp: 100,
-      vx: 1.8,
-      vy: 0,
-      attackTimer: 80,
-      hitFlash: 0,
-      stage10: 1,
-      stage1Hits: 0,
-      stage2Collected: 0,
-      stage3Timer: 0,
-      defeated: false,
-    },
-    goalX: 2200,
-    clinicX: 2040,
-    itemsCollected: 0,
-    score: 0,
-    skillCd: 0,
-    victory: false,
-    finaleWalkMode: false,
-    clinicDoorOpen: 0,
-  });
+    [showEducationalMessage]
+  );
+
+  useEffect(() => {
+    initLevel(phaseNumber);
+    const unlockAudio = () => {
+      if (soundFX.musicEnabled && !soundFX.muted) {
+        soundFX.startLoFiMusic(phaseNumber);
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [phaseNumber, initLevel]);
+
+  useEffect(() => {
+    return () => {
+      soundFX.stopLoFiMusic();
+    };
+  }, []);
 
   useEffect(() => {
     gameRef.current.goldenSkin = goldenSkinEquipped;
@@ -303,1878 +316,1577 @@ export const MarioPlatformerGame: React.FC<MarioPlatformerGameProps> = ({
     setActiveNurseIndex(selectedCharacterIdx);
   }, [selectedCharacterIdx]);
 
-  // Toggle Fullscreen Horizontal Mode (Mobile & Desktop)
-  const handleToggleFullscreen = async () => {
-    try {
-      if (!isFullscreenLandscape) {
-        setIsFullscreenLandscape(true);
-        if (document.documentElement.requestFullscreen) {
-          await document.documentElement.requestFullscreen().catch(() => {});
-        }
-        const scr = window.screen as unknown as {
-          orientation?: { lock?: (mode: string) => Promise<void> };
-        };
-        if (scr?.orientation?.lock) {
-          await scr.orientation.lock('landscape').catch(() => {});
-        }
-      } else {
-        setIsFullscreenLandscape(false);
-        if (document.fullscreenElement && document.exitFullscreen) {
-          await document.exitFullscreen().catch(() => {});
-        }
-      }
-    } catch {
-      setIsFullscreenLandscape((prev) => !prev);
+  // ==================== PLAYER JUMP & 10 UNIQUE CHARACTER POWERS ====================
+  const handleJump = useCallback(() => {
+    const g = gameRef.current;
+    if (g.levelCleared) return;
+    if (g.grounded || g.jumpsUsed < 2) {
+      g.playerVy = g.jumpsUsed === 0 ? -12.4 : -10.8;
+      g.grounded = false;
+      g.jumpsUsed += 1;
+      soundFX.playJump();
+      spawnParticles(g.playerX + g.playerW / 2, g.playerY + g.playerH, '#6ee7b7', 6);
     }
-  };
+  }, [spawnParticles]);
 
-  const initLevel = useCallback(
-    (phaseNum: number, tier: DifficultyTier) => {
-      const g = gameRef.current;
-      const mult = getDifficultyMultiplier(phaseNum, tier);
-      g.diffMult = mult;
-      g.victory = false;
-      g.finaleWalkMode = false;
-      g.clinicDoorOpen = 0;
-      g.itemsCollected = 0;
-      g.projectiles = [];
-      g.floatingTexts = [];
-      g.enemies = [];
-      g.collectibles = [];
-      g.pedestals = [];
-      g.unionOrbs = [];
-      g.skillCd = 0;
+  const handleUseSkill = useCallback(() => {
+    const g = gameRef.current;
+    if (g.levelCleared || g.skillCooldown > 0) return;
 
-      g.player = {
-        x: 75,
-        y: 320,
-        w: 50,
-        h: 70,
-        vx: 0,
-        vy: 0,
-        facing: 1,
-        onGround: false,
-        jumpsLeft: 2,
-        invulnTimer: 0,
-        slowTimer: 0,
-        shieldTimer: 0,
-        animFrame: 0,
-        hp: 100,
-      };
-      g.cameraX = 0;
+    const nurse = NURSES[g.activeNurseIdx] || NURSES[0];
+    g.skillCooldown = 24;
+    soundFX.playNurseSkill(nurse.pitchOffset);
 
-      setVictoryState(false);
-      setWalkingToClinic(false);
-      setPlayerHp(100);
-      setItemsCount(0);
-      setBossHp(100);
-      setBoss10Stage(1);
+    const startX = g.facing === 1 ? g.playerX + g.playerW + 6 : g.playerX - 6;
+    const startY = g.playerY + g.playerH * 0.45;
+    const dir = g.facing;
 
-      if (phaseNum === 5) {
-        g.levelWidth = 1850;
-        g.arenaLockWidth = 1080;
-        g.goalX = 1660;
-        g.platforms = [
-          { x: 0, y: 420, w: 1850, h: 60, type: 'ground' },
-          { x: 110, y: 310, w: 165, h: 20, type: 'brick' },
-          {
-            x: 350,
-            y: 235,
-            w: 190,
-            h: 20,
-            type: 'moving',
-            vx: 1.6 * mult,
-            minX: 290,
-            maxX: 540,
-          },
-          { x: 640, y: 310, w: 160, h: 20, type: 'brick' },
-          { x: 170, y: 175, w: 140, h: 18, type: 'cloud' },
-          { x: 1180, y: 320, w: 160, h: 20, type: 'brick' },
-          { x: 1400, y: 250, w: 160, h: 20, type: 'cloud' },
-        ];
-        g.qBlocks = [
-          {
-            id: 'qb-5-1',
-            x: 165,
-            y: 205,
-            w: 44,
-            h: 44,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '🩺',
-            itemLabel: 'Monitor de Pressão',
-            eduText: '“A pressão arterial deve ser acompanhada durante a gestação.”',
-          },
-          {
-            id: 'qb-5-2',
-            x: 420,
-            y: 130,
-            w: 44,
-            h: 44,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '📋',
-            itemLabel: 'Caderneta da Gestante',
-            eduText: '“O acompanhamento pré-natal é importante.”',
-          },
-          {
-            id: 'qb-5-3',
-            x: 695,
-            y: 205,
-            w: 44,
-            h: 44,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '💚',
-            itemLabel: 'Consulta Pré-Natal',
-            eduText: '“O acompanhamento pré-natal é importante.”',
-          },
-        ];
-        g.collectibles = [
-          { id: 'c-5-1', x: 210, y: 265, vy: 0, symbol: '🩺', label: 'Aferição Regular', collected: false, floatPhase: 0 },
-          { id: 'c-5-2', x: 450, y: 190, vy: 0, symbol: '💧', label: 'Hidratação Materna', collected: false, floatPhase: 1.5 },
-          { id: 'c-5-3', x: 710, y: 265, vy: 0, symbol: '📋', label: 'Exame Pré-Natal', collected: false, floatPhase: 3 },
-        ];
-        g.boss = {
-          x: 780,
-          y: 135,
-          w: 168,
-          h: 180,
-          hp: 100,
-          maxHp: 100,
-          vx: -1.5 * mult,
+    // Register contribution for Boss Union Stages
+    if (g.boss && !g.boss.defeated) {
+      if (!g.boss.unionContributors.includes(nurse.id)) {
+        g.boss.unionContributors.push(nurse.id);
+      }
+    }
+
+    switch (nurse.id) {
+      case 'stephanie': {
+        // 1. Stephanie: Piercing Emerald Heartbeat Wave + Heal +18 HP + Cleanse Slow
+        g.slowTimer = 0;
+        g.hp = Math.min(g.maxHp, g.hp + 18);
+        setHpUI(g.hp);
+        g.projectiles.push({
+          x: startX,
+          y: startY,
+          vx: dir * 9.5,
           vy: 0,
-          attackTimer: Math.max(45, Math.round(85 / mult)),
-          hitFlash: 0,
-          stage10: 1,
-          stage1Hits: 0,
-          stage2Collected: 0,
-          stage3Timer: 0,
-          defeated: false,
-        };
-        setEduBannerText('“O acompanhamento pré-natal é importante.”');
-        setStageProgressText(
-          'FASE 5 (CHEFÃO): Use o Joystick para correr, pular as Serpentes de Onda e derrotar a Sombra da Pressão!'
-        );
-      } else if (phaseNum === 10) {
-        g.levelWidth = 2480;
-        g.arenaLockWidth = 1080;
-        g.clinicX = 2060;
-        g.goalX = 2165;
+          r: 13,
+          color: '#10b981',
+          fromPlayer: true,
+          nurseId: nurse.id,
+          powerStyle: 'pierce_wave',
+          piercing: true,
+          damage: 14,
+          life: 65,
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Onda Vital +18 HP!', '#34d399');
+        break;
+      }
 
-        g.platforms = [
-          { x: 0, y: 420, w: 2480, h: 60, type: 'ground' },
-          { x: 85, y: 315, w: 160, h: 20, type: 'brick' },
-          {
-            x: 320,
-            y: 245,
-            w: 195,
-            h: 20,
-            type: 'moving',
-            vx: 1.9 * mult,
-            minX: 250,
-            maxX: 520,
-          },
-          { x: 610, y: 315, w: 160, h: 20, type: 'brick' },
-          { x: 190, y: 170, w: 145, h: 18, type: 'cloud' },
-          { x: 540, y: 170, w: 145, h: 18, type: 'cloud' },
-          { x: 1220, y: 325, w: 150, h: 20, type: 'cloud' },
-          { x: 1450, y: 265, w: 160, h: 20, type: 'cloud' },
-          { x: 1690, y: 325, w: 150, h: 20, type: 'cloud' },
-        ];
-
-        g.qBlocks = [
-          {
-            id: 'qb-10-1',
-            x: 140,
-            y: 210,
-            w: 46,
-            h: 46,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '💡',
-            itemLabel: 'Exames em Dia',
-            eduText: '“Informação também é cuidado.”',
-            isTrueInfo: true,
-          },
-          {
-            id: 'qb-10-2',
-            x: 295,
-            y: 135,
-            w: 46,
-            h: 46,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '⚠️',
-            itemLabel: 'Mito Descartado',
-            eduText: 'Mito superado! Procure sempre orientação profissional.',
-            isTrueInfo: false,
-          },
-          {
-            id: 'qb-10-3',
-            x: 445,
-            y: 135,
-            w: 46,
-            h: 46,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '📚',
-            itemLabel: 'Orientação Segura',
-            eduText: '“Prevenção faz parte da saúde.”',
-            isTrueInfo: true,
-          },
-          {
-            id: 'qb-10-4',
-            x: 660,
-            y: 210,
-            w: 46,
-            h: 46,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: '🩺',
-            itemLabel: 'Autonomia Feminina',
-            eduText: '“Não deixe seus cuidados para depois.”',
-            isTrueInfo: true,
-          },
-        ];
-
-        g.boss = {
-          x: 785,
-          y: 130,
-          w: 168,
-          h: 180,
-          hp: 100,
-          maxHp: 100,
-          vx: -1.6 * mult,
+      case 'marcelo': {
+        // 2. Marcelo: 360° Orbital Shields + Precision Laser
+        g.orbitalShieldTimer = 240;
+        g.projectiles.push({
+          x: startX,
+          y: startY,
+          vx: dir * 11.5,
           vy: 0,
-          attackTimer: Math.max(40, Math.round(75 / mult)),
-          hitFlash: 0,
-          stage10: 1,
-          stage1Hits: 0,
-          stage2Collected: 0,
-          stage3Timer: 0,
-          defeated: false,
-        };
-        setEduBannerText('“Informação também é cuidado.”');
-        setStageProgressText(
-          'FASE 10 — ETAPA 1 (INFORMAÇÃO): Pule por baixo dos 3 Blocos Dourados [?] de Informação Verdadeira ou atire!'
-        );
-      } else {
-        const courseLength = 2100 + phaseNum * 160;
-        g.levelWidth = courseLength;
-        g.arenaLockWidth = courseLength;
-        g.goalX = courseLength - 210;
+          r: 9,
+          color: '#0ea5e9',
+          fromPlayer: true,
+          nurseId: nurse.id,
+          powerStyle: 'laser_orb',
+          damage: 13,
+          life: 55,
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Escudo Orbital 360°!', '#38bdf8');
+        break;
+      }
 
-        const gapWidth = Math.min(135, 65 + phaseNum * 7);
-        const segW = Math.floor((courseLength - 500) / 3);
-
-        g.platforms = [
-          { x: 0, y: 420, w: segW, h: 60, type: 'ground' },
-          { x: segW + gapWidth, y: 420, w: segW, h: 60, type: 'ground' },
-          { x: (segW + gapWidth) * 2, y: 420, w: courseLength - (segW + gapWidth) * 2, h: 60, type: 'ground' },
-        ];
-
-        const numFloating = 6 + Math.floor(phaseNum / 2);
-        for (let i = 0; i < numFloating; i++) {
-          const px = 220 + i * Math.floor((courseLength - 520) / numFloating);
-          const py = i % 2 === 0 ? 315 : 235;
-          const platW = Math.max(115, 180 - phaseNum * 6);
-          const isMoving = i % 2 === 1 || phaseNum >= 6;
-
-          g.platforms.push({
-            x: px,
-            y: py,
-            w: platW,
-            h: 20,
-            type: isMoving ? 'moving' : i % 3 === 0 ? 'brick' : 'cloud',
-            vx: isMoving ? (1.2 + phaseNum * 0.18) * (tier === 'NORMAL' ? 1 : 1.3) : 0,
-            minX: px - 70,
-            maxX: px + platW + 70,
+      case 'bianca': {
+        // 3. Bianca: 3-Way Solar Star Spread + Remote Question Block Trigger
+        [-3.2, 0, 3.2].forEach((vyVal) => {
+          g.projectiles.push({
+            x: startX,
+            y: startY,
+            vx: dir * 9.0,
+            vy: vyVal,
+            r: 9,
+            color: '#f59e0b',
+            fromPlayer: true,
+            nurseId: nurse.id,
+            powerStyle: 'star_spread',
+            damage: 10,
+            life: 55,
           });
-        }
-
-        const careSymbols = [
-          { s: '🩺', l: 'Pressão em Dia', t: '“A pressão arterial deve ser acompanhada durante a gestação.”' },
-          { s: '📋', l: 'Caderneta Pré-Natal', t: '“O acompanhamento pré-natal é importante.”' },
-          { s: '🔬', l: 'Exame Preventivo', t: '“Prevenção faz parte da saúde.”' },
-          { s: '💉', l: 'Vacina Atualizada', t: '“Informação também é cuidado.”' },
-          { s: '💚', l: 'Autocuidado Hoje', t: '“Não deixe seus cuidados para depois.”' },
-        ];
-
-        g.qBlocks = [0, 1, 2, 3].map((idx) => {
-          const item = careSymbols[(phaseNum + idx) % careSymbols.length];
-          const qx = 280 + idx * Math.floor((courseLength - 650) / 4);
-          return {
-            id: `qb-${phaseNum}-${idx}`,
-            x: qx,
-            y: idx % 2 === 0 ? 205 : 140,
-            w: 44,
-            h: 44,
-            hit: false,
-            bounceY: 0,
-            itemSymbol: item.s,
-            itemLabel: item.l,
-            eduText: item.t,
-          };
         });
-
-        g.collectibles = Array.from({ length: 7 }).map((_, idx) => {
-          const item = careSymbols[idx % careSymbols.length];
-          return {
-            id: `col-${phaseNum}-${idx}`,
-            x: 240 + idx * Math.floor((courseLength - 500) / 7),
-            y: idx % 2 === 0 ? 270 : 190,
-            vy: 0,
-            symbol: item.s,
-            label: item.l,
-            collected: false,
-            floatPhase: idx * 0.9,
-          };
-        });
-
-        const enemyCount = 3 + Math.floor(phaseNum * 0.8);
-        const enemyLabels = ['Espectro da Dúvida', 'Gárgula da Pressa', 'Sombra do Adiamento', 'Inércia', 'Mito', 'Tensão'];
-        g.enemies = Array.from({ length: enemyCount }).map((_, idx) => {
-          const ex = 360 + idx * Math.floor((courseLength - 680) / enemyCount);
-          const baseSpeed = (1.1 + phaseNum * 0.22) * (tier === 'NORMAL' ? 1 : tier === 'HARD' ? 1.3 : 1.6);
-          const isJumper = phaseNum >= 3 && idx % 2 === 1;
-          return {
-            id: `en-${phaseNum}-${idx}`,
-            x: ex,
-            y: 376,
-            w: 42,
-            h: 44,
-            vx: (idx % 2 === 0 ? 1 : -1) * baseSpeed,
-            vy: 0,
-            minX: Math.max(180, ex - 160),
-            maxX: Math.min(courseLength - 260, ex + 160),
-            alive: true,
-            type: isJumper ? 'jumper' : 'walker',
-            label: enemyLabels[idx % enemyLabels.length],
-            jumpTimer: 40 + (idx * 25) % 60,
-          };
-        });
-
-        setEduBannerText(currentPhaseData.educationalTip);
-        setStageProgressText(
-          `Fase ${phaseNum} (Nível ${phaseNum}/10): Derrote os Espectros e Gárgulas em Pixel Art e chegue à bandeira Vittacare!`
-        );
-      }
-    },
-    [currentPhaseData.educationalTip, getDifficultyMultiplier]
-  );
-
-  const advanceBoss10ToStage = useCallback((nextStage: 2 | 3 | 4 | 5) => {
-    const g = gameRef.current;
-    g.boss.stage10 = nextStage;
-    setBoss10Stage(nextStage);
-    soundFX.playBossPurify();
-
-    if (nextStage === 2) {
-      g.boss.hp = 75;
-      setBossHp(75);
-      setEduBannerText('“Prevenção faz parte da saúde.”');
-      setStageProgressText(
-        'ETAPA 2 — PREVENÇÃO: Pule pelas plataformas para coletar os 6 Itens de Prevenção!'
-      );
-      g.collectibles = [
-        { id: 's2-1', x: 120, y: 265, vy: 0, symbol: '🔬', label: 'Papanicolau', collected: false, floatPhase: 0 },
-        { id: 's2-2', x: 240, y: 125, vy: 0, symbol: '🎗️', label: 'Mamografia', collected: false, floatPhase: 1 },
-        { id: 's2-3', x: 390, y: 195, vy: 0, symbol: '💉', label: 'Vacinação', collected: false, floatPhase: 2 },
-        { id: 's2-4', x: 585, y: 125, vy: 0, symbol: '🩺', label: 'Pressão Arterial', collected: false, floatPhase: 3 },
-        { id: 's2-5', x: 650, y: 265, vy: 0, symbol: '📋', label: 'Check-up', collected: false, floatPhase: 4 },
-        { id: 's2-6', x: 460, y: 370, vy: 0, symbol: '🌿', label: 'Autocuidado', collected: false, floatPhase: 5 },
-      ];
-    } else if (nextStage === 3) {
-      g.boss.hp = 50;
-      setBossHp(50);
-      setEduBannerText('“Não deixe seus cuidados para depois.”');
-      setStageProgressText(
-        'ETAPA 3 — CUIDADO: Proteja os 4 Indicadores de Saúde contra os Golens de Fragmento!'
-      );
-      g.pedestals = [
-        { id: 'ped-1', x: 130, y: 380, label: 'Pré-Natal', nurseName: 'Stephanie', color: '#10b981', hp: 100, shieldedTimer: 0 },
-        { id: 'ped-2', x: 290, y: 380, label: 'Pressão Vital', nurseName: 'Marcelo', color: '#0ea5e9', hp: 100, shieldedTimer: 0 },
-        { id: 'ped-3', x: 450, y: 380, label: 'Informação', nurseName: 'Bianca', color: '#f59e0b', hp: 100, shieldedTimer: 0 },
-        { id: 'ped-4', x: 610, y: 380, label: 'Prevenção', nurseName: 'Leticia', color: '#ec4899', hp: 100, shieldedTimer: 0 },
-      ];
-      g.boss.stage3Timer = 0;
-    } else if (nextStage === 4) {
-      g.boss.hp = 25;
-      setBossHp(25);
-      g.pedestals = [];
-      g.enemies = [];
-      setEduBannerText('“Informação também é cuidado.” · “Prevenção faz parte da saúde.”');
-      setStageProgressText(
-        'ETAPA 4 — UNIÃO: Pule nos 4 Cristais de União para derrotar a Sombra do Descuido e abrir a Clínica Vittacare!'
-      );
-      g.unionOrbs = [
-        { id: 'orb-0', x: 145, y: 255, nurseIdx: 0, activated: false },
-        { id: 'orb-1', x: 260, y: 120, nurseIdx: 1, activated: false },
-        { id: 'orb-2', x: 430, y: 185, nurseIdx: 2, activated: false },
-        { id: 'orb-3', x: 600, y: 120, nurseIdx: 3, activated: false },
-      ];
-    } else if (nextStage === 5) {
-      g.boss.hp = 0;
-      g.boss.defeated = true;
-      g.enemies = [];
-      g.unionOrbs = [];
-      g.finaleWalkMode = true;
-      g.arenaLockWidth = g.levelWidth;
-      setBossHp(0);
-      setWalkingToClinic(true);
-      soundFX.playVictoryFanfare();
-      setEduBannerText('SOMBRA DERROTADA! CORRA PARA A DIREITA ATÉ A CLÍNICA VITTACARE! 🏥');
-      setStageProgressText(
-        'Use o Joystick para correr para a direita pelo caminho iluminado até entrar na Clínica Vittacare!'
-      );
-      for (let i = 0; i < 6; i++) {
-        g.collectibles.push({
-          id: `road-heart-${i}`,
-          x: 1180 + i * 145,
-          y: i % 2 === 0 ? 360 : 280,
-          vy: 0,
-          symbol: '💚',
-          label: 'Cuidado Vittacare',
-          collected: false,
-          floatPhase: i * 0.7,
-        });
-      }
-    }
-  }, []);
-
-  const triggerNurseSkill = useCallback(() => {
-    const g = gameRef.current;
-    if (g.skillCd > 0) return;
-
-    const charObj = NURSES[g.activeNurseIdx] || NURSES[0];
-    soundFX.playNurseSkill(charObj.pitchOffset);
-    g.skillCd = 34;
-
-    const p = g.player;
-    g.projectiles.push({
-      id: `proj-${Date.now()}-${Math.random()}`,
-      x: p.facing === 1 ? p.x + p.w : p.x - 10,
-      y: p.y + p.h * 0.42,
-      vx: p.facing * 10.5,
-      vy: 0,
-      color: g.goldenSkin ? '#fbbf24' : charObj.baseColor,
-      nurseId: charObj.id,
-      radius: 10,
-    });
-
-    // Group & Character Special Bonuses
-    if (charObj.id === 'stephanie' || charObj.group === 'SOCIAS') {
-      p.slowTimer = 0;
-      p.hp = Math.min(100, p.hp + 12);
-      setPlayerHp(p.hp);
-    }
-    if (charObj.id === 'marcelo' || charObj.id === 'vivian' || charObj.id === 'barbara') {
-      p.shieldTimer = 175;
-      p.slowTimer = 0;
-      g.pedestals.forEach((ped) => {
-        ped.shieldedTimer = 175;
-      });
-    }
-    if (charObj.id === 'bianca' || charObj.group === 'MARKETING') {
-      // Double wave projectile for Marketing & Bianca
-      g.projectiles.push({
-        id: `proj-extra-${Date.now()}`,
-        x: p.facing === 1 ? p.x + p.w : p.x - 10,
-        y: p.y + p.h * 0.25,
-        vx: p.facing * 11.2,
-        vy: -1.1,
-        color: '#fbbf24',
-        nurseId: charObj.id,
-        radius: 8,
-      });
-    }
-    if (charObj.id === 'leticia' || charObj.id === 'samara') {
-      g.collectibles.forEach((c) => {
-        if (!c.collected && Math.hypot(c.x - p.x, c.y - p.y) < 300) {
-          c.x += (p.x - c.x) * 0.55;
-          c.y += (p.y - c.y) * 0.55;
-        }
-      });
-    }
-
-    g.floatingTexts.push({
-      id: `ft-sk-${Date.now()}`,
-      x: p.x,
-      y: p.y - 12,
-      text: `${charObj.skillName}!`,
-      color: charObj.baseColor,
-      life: 0,
-      maxLife: 40,
-    });
-  }, []);
-
-  const handleJumpAction = useCallback(() => {
-    const g = gameRef.current;
-    if (g.player.jumpsLeft > 0) {
-      g.player.vy = -12.6;
-      g.player.onGround = false;
-      g.player.jumpsLeft -= 1;
-      soundFX.playCollect();
-    }
-  }, []);
-
-  // Virtual Analog Joystick Handlers
-  const updateJoystickFromClientXY = useCallback(
-    (clientX: number, clientY: number) => {
-      const base = joystickBaseRef.current;
-      if (!base) return;
-      const rect = base.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const maxRadius = rect.width * 0.42;
-
-      const dx = clientX - centerX;
-      const dy = clientY - centerY;
-      const dist = Math.hypot(dx, dy);
-      const clampedDist = Math.min(dist, maxRadius);
-      const angle = Math.atan2(dy, dx);
-
-      const nx = clampedDist * Math.cos(angle);
-      const ny = clampedDist * Math.sin(angle);
-      setJoyPos({ x: nx, y: ny });
-
-      const normX = nx / maxRadius;
-      const normY = ny / maxRadius;
-
-      gameRef.current.joyX = Math.abs(normX) > 0.18 ? normX : 0;
-
-      // Pushing joystick strongly upward triggers Jump!
-      if (normY < -0.58 && !joyJumpTriggeredRef.current) {
-        joyJumpTriggeredRef.current = true;
-        handleJumpAction();
-      } else if (normY > -0.3) {
-        joyJumpTriggeredRef.current = false;
-      }
-    },
-    [handleJumpAction]
-  );
-
-  const resetJoystick = useCallback(() => {
-    setJoyActive(false);
-    setJoyPos({ x: 0, y: 0 });
-    gameRef.current.joyX = 0;
-    joyJumpTriggeredRef.current = false;
-  }, []);
-
-  useEffect(() => {
-    initLevel(phaseNumber, difficultyTier);
-  }, [phaseNumber, difficultyTier, initLevel]);
-
-  // Keyboard Controls
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const g = gameRef.current;
-      g.keys[e.code] = true;
-
-      if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') {
-        e.preventDefault();
-        handleJumpAction();
-      } else if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyK') {
-        e.preventDefault();
-        triggerNurseSkill();
-      } else if (e.code === 'KeyQ') {
-        const next = (g.activeNurseIdx + 1) % NURSES.length;
-        g.activeNurseIdx = next;
-        setActiveNurseIndex(next);
-        soundFX.playCollect();
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      gameRef.current.keys[e.code] = false;
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [handleJumpAction, triggerNurseSkill]);
-
-  // Main 60FPS Game Loop & Pixel-Art Renderer
-  useEffect(() => {
-    let animId: number;
-    let frameCount = 0;
-
-    const updateAndDraw = () => {
-      frameCount++;
-      const g = gameRef.current;
-      const p = g.player;
-      const boss = g.boss;
-
-      if (g.skillCd > 0) g.skillCd--;
-      if (p.invulnTimer > 0) p.invulnTimer--;
-      if (p.slowTimer > 0) p.slowTimer--;
-      if (p.shieldTimer > 0) p.shieldTimer--;
-
-      for (const plat of g.platforms) {
-        if (plat.type === 'moving' && plat.vx && plat.minX !== undefined && plat.maxX !== undefined) {
-          plat.x += plat.vx;
-          if (plat.x < plat.minX || plat.x + plat.w > plat.maxX) {
-            plat.vx = -plat.vx;
-          }
-        }
-      }
-
-      // Horizontal Movement (Keyboard + Virtual Analog Joystick!)
-      const keyLeft = g.keys['ArrowLeft'] || g.keys['KeyA'];
-      const keyRight = g.keys['ArrowRight'] || g.keys['KeyD'];
-      const maxSpeed = p.slowTimer > 0 ? 2.8 : 5.6;
-
-      if (keyLeft || g.joyX < -0.18) {
-        const factor = keyLeft ? 1 : Math.abs(g.joyX);
-        p.vx = Math.max(p.vx - 0.9, -maxSpeed * factor);
-        p.facing = -1;
-        p.animFrame += 0.22;
-      } else if (keyRight || g.joyX > 0.18) {
-        const factor = keyRight ? 1 : Math.abs(g.joyX);
-        p.vx = Math.min(p.vx + 0.9, maxSpeed * factor);
-        p.facing = 1;
-        p.animFrame += 0.22;
-      } else {
-        p.vx *= 0.78;
-        if (Math.abs(p.vx) < 0.1) p.vx = 0;
-      }
-
-      p.x += p.vx;
-      if (p.x < 16) p.x = 16;
-      if (p.x + p.w > g.arenaLockWidth - 16) {
-        p.x = g.arenaLockWidth - 16 - p.w;
-      }
-
-      if (frameCount % 8 === 0) {
-        const distPx = Math.max(0, g.goalX - p.x);
-        setDistanceToGoalMeters(Math.ceil(distPx / 12));
-      }
-
-      const prevBottom = p.y + p.h;
-      const prevTop = p.y;
-      p.vy += GRAVITY;
-      if (p.vy > 13) p.vy = 13;
-      p.y += p.vy;
-      p.onGround = false;
-
-      for (const plat of g.platforms) {
-        const horizOverlap = p.x + p.w - 8 > plat.x && p.x + 8 < plat.x + plat.w;
-        if (horizOverlap && p.vy >= 0 && prevBottom <= plat.y + 14 && p.y + p.h >= plat.y) {
-          p.y = plat.y - p.h;
-          p.vy = 0;
-          p.onGround = true;
-          p.jumpsLeft = 2;
-          if (plat.type === 'moving' && plat.vx) {
-            p.x += plat.vx;
-          }
-        }
-      }
-
-      if (p.y > CANVAS_H + 60) {
-        p.y = 140;
-        p.vy = 0;
-        p.x = Math.max(60, p.x - 160);
-        p.hp = Math.max(25, p.hp - 10);
-        setPlayerHp(p.hp);
-      }
-
-      for (const qb of g.qBlocks) {
-        if (qb.bounceY < 0) qb.bounceY += 1.5;
-
-        const horizOverlap = p.x + p.w - 6 > qb.x && p.x + 6 < qb.x + qb.w;
-        if (horizOverlap && p.vy >= 0 && prevBottom <= qb.y + 12 && p.y + p.h >= qb.y) {
-          p.y = qb.y - p.h;
-          p.vy = 0;
-          p.onGround = true;
-          p.jumpsLeft = 2;
-        }
-        if (horizOverlap && p.vy < 0 && prevTop >= qb.y + qb.h - 12 && p.y <= qb.y + qb.h) {
-          p.y = qb.y + qb.h;
-          p.vy = 2.5;
-          qb.bounceY = -10;
-
-          if (!qb.hit) {
+        // Activate nearby unhit question blocks
+        for (const qb of g.questionBlocks) {
+          if (!qb.hit && Math.abs(qb.x - g.playerX) < 320) {
             qb.hit = true;
-            soundFX.playCollect();
-            setEduBannerText(qb.eduText);
-
-            if (phaseNumber === 10 && g.boss.stage10 === 1) {
-              if (qb.isTrueInfo) {
-                g.boss.stage1Hits += 1;
-                g.boss.hitFlash = 18;
-                g.score += 200;
-                setScore(g.score);
-                g.floatingTexts.push({
-                  id: `ft-qb-${Date.now()}`,
-                  x: qb.x,
-                  y: qb.y - 16,
-                  text: `✓ ${qb.itemLabel}! (${g.boss.stage1Hits}/3)`,
-                  color: '#34d399',
-                  life: 0,
-                  maxLife: 60,
-                });
-                if (g.boss.stage1Hits >= 3) {
-                  advanceBoss10ToStage(2);
-                }
-              } else {
-                g.floatingTexts.push({
-                  id: `ft-qb-${Date.now()}`,
-                  x: qb.x,
-                  y: qb.y - 16,
-                  text: 'Mito Descartado!',
-                  color: '#fbbf24',
-                  life: 0,
-                  maxLife: 60,
-                });
-              }
-            } else {
-              g.collectibles.push({
-                id: `pop-${Date.now()}-${Math.random()}`,
-                x: qb.x + 8,
-                y: qb.y - 36,
-                vy: -4,
-                symbol: qb.itemSymbol,
-                label: qb.itemLabel,
-                collected: false,
-                floatPhase: 0,
-              });
-              g.floatingTexts.push({
-                id: `ft-qb-${Date.now()}`,
-                x: qb.x - 10,
-                y: qb.y - 20,
-                text: `+${qb.itemLabel}`,
-                color: '#fbbf24',
-                life: 0,
-                maxLife: 55,
-              });
-            }
+            qb.bounceY = -10;
+            g.collectedCount += 1;
+            g.score += 150;
+            setCollectedUI(g.collectedCount);
+            setScoreUI(g.score);
+            showEducationalMessage(qb.rewardText);
           }
         }
+        addFloatingText(g.playerX, g.playerY - 14, 'Tríade do Saber!', '#fde047');
+        break;
       }
 
-      for (const col of g.collectibles) {
-        if (col.collected) continue;
-        col.floatPhase += 0.08;
-        if (col.vy < 0) {
-          col.y += col.vy;
-          col.vy += 0.25;
+      case 'leticia': {
+        // 4. Leticia: Returning Magnetic Boomerang + Pull Collectibles
+        g.projectiles.push({
+          x: startX,
+          y: startY,
+          vx: dir * 10.5,
+          vy: 0,
+          r: 11,
+          color: '#ec4899',
+          fromPlayer: true,
+          nurseId: nurse.id,
+          powerStyle: 'boomerang',
+          piercing: true,
+          returning: true,
+          damage: 12,
+          life: 80,
+        });
+        for (const col of g.collectibles) {
+          if (!col.collected && Math.abs(col.x - g.playerX) < 340) {
+            col.x += (g.playerX - col.x) * 0.45;
+            col.y += (g.playerY - col.y) * 0.45;
+          }
         }
-        const dist = Math.hypot(p.x + p.w / 2 - (col.x + 14), p.y + p.h / 2 - (col.y + 14));
-        if (dist < 44) {
-          col.collected = true;
-          soundFX.playCollect();
-          g.itemsCollected += 1;
-          g.score += 150;
-          p.hp = Math.min(100, p.hp + 8);
-          p.slowTimer = 0;
-          setItemsCount(g.itemsCollected);
-          setScore(g.score);
-          setPlayerHp(p.hp);
+        addFloatingText(g.playerX, g.playerY - 14, 'Bumerangue Magnético!', '#f472b6');
+        break;
+      }
 
-          g.floatingTexts.push({
-            id: `ft-col-${Date.now()}-${Math.random()}`,
-            x: col.x,
-            y: col.y - 10,
-            text: `+${col.label}!`,
-            color: '#34d399',
-            life: 0,
-            maxLife: 50,
+      case 'ronald': {
+        // 5. Ronald Mkt: Expanding Sonic Ring + Speed Boost
+        g.speedBoostTimer = 210;
+        g.projectiles.push({
+          x: startX,
+          y: startY,
+          vx: dir * 9.2,
+          vy: 0,
+          r: 16,
+          color: '#3b82f6',
+          fromPlayer: true,
+          nurseId: nurse.id,
+          powerStyle: 'sonic_ring',
+          piercing: true,
+          damage: 14,
+          life: 60,
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Onda Sônica & Turbo!', '#60a5fa');
+        break;
+      }
+
+      case 'nina': {
+        // 6. Nina Mkt: 3 Homing Fireballs
+        [-2.5, 0, 2.5].forEach((vyOffset) => {
+          g.projectiles.push({
+            x: startX,
+            y: startY,
+            vx: dir * 8.2,
+            vy: vyOffset,
+            r: 9,
+            color: '#ea580c',
+            fromPlayer: true,
+            nurseId: nurse.id,
+            powerStyle: 'homing_fire',
+            homing: true,
+            damage: 10,
+            life: 75,
           });
-
-          if (phaseNumber === 5 && !boss.defeated) {
-            boss.hp = Math.max(0, boss.hp - 13);
-            boss.hitFlash = 16;
-            setBossHp(boss.hp);
-            setEduBannerText(
-              PHASE5_EDUCATIONAL_MESSAGES[g.itemsCollected % PHASE5_EDUCATIONAL_MESSAGES.length]
-            );
-            setTimeout(() => {
-              if (!gameRef.current.boss.defeated && phaseNumber === 5) {
-                const spots = [
-                  { x: 150, y: 265, s: '🩺', l: 'Monitor de Pressão' },
-                  { x: 430, y: 190, s: '📋', l: 'Caderneta Pré-Natal' },
-                  { x: 690, y: 265, s: '💚', l: 'Consulta em Dia' },
-                  { x: 200, y: 130, s: '💧', l: 'Equilíbrio Materno' },
-                ];
-                const pick = spots[Math.floor(Math.random() * spots.length)];
-                gameRef.current.collectibles.push({
-                  id: `respawn-${Date.now()}`,
-                  x: pick.x,
-                  y: pick.y,
-                  vy: -3,
-                  symbol: pick.s,
-                  label: pick.l,
-                  collected: false,
-                  floatPhase: 0,
-                });
-              }
-            }, 2200);
-          }
-
-          if (phaseNumber === 10 && boss.stage10 === 2) {
-            boss.stage2Collected += 1;
-            boss.hp = Math.max(50, 75 - boss.stage2Collected * 4);
-            boss.hitFlash = 14;
-            setBossHp(boss.hp);
-            if (boss.stage2Collected >= 6) {
-              advanceBoss10ToStage(3);
-            }
-          }
-        }
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Chamas Teleguiadas!', '#fb923c');
+        break;
       }
 
-      for (let i = g.projectiles.length - 1; i >= 0; i--) {
-        const proj = g.projectiles[i];
-        proj.x += proj.vx;
-        proj.y += proj.vy;
-
-        if (phaseNumber === 10 && boss.stage10 === 1) {
-          for (const qb of g.qBlocks) {
-            if (
-              !qb.hit &&
-              proj.x > qb.x &&
-              proj.x < qb.x + qb.w &&
-              proj.y > qb.y &&
-              proj.y < qb.y + qb.h
-            ) {
-              qb.hit = true;
-              qb.bounceY = -10;
-              g.projectiles.splice(i, 1);
-              if (qb.isTrueInfo) {
-                soundFX.playCollect();
-                boss.stage1Hits += 1;
-                boss.hitFlash = 18;
-                setEduBannerText(qb.eduText);
-                if (boss.stage1Hits >= 3) advanceBoss10ToStage(2);
-              }
-              break;
-            }
-          }
-        }
-
+      case 'samara': {
+        // 7. Samara Mkt: Sky Violet Lightning Bolts + Pedestal Restore
+        let targetsHit = 0;
         for (const en of g.enemies) {
-          if (
-            en.alive &&
-            proj.x + proj.radius > en.x &&
-            proj.x - proj.radius < en.x + en.w &&
-            proj.y + proj.radius > en.y &&
-            proj.y - proj.radius < en.y + en.h
-          ) {
-            en.alive = false;
-            g.projectiles.splice(i, 1);
-            soundFX.playCollect();
-            g.score += 100;
-            setScore(g.score);
-            g.floatingTexts.push({
-              id: `ft-en-${Date.now()}-${Math.random()}`,
-              x: en.x,
-              y: en.y,
-              text: 'Purificado!',
-              color: '#38bdf8',
-              life: 0,
-              maxLife: 40,
+          if (en.alive && Math.abs(en.x - g.playerX) < 460 && targetsHit < 3) {
+            en.hp -= 2;
+            targetsHit++;
+            g.lightningEffects.push({
+              x1: en.x + en.w / 2,
+              y1: 20,
+              x2: en.x + en.w / 2,
+              y2: en.y + en.h / 2,
+              color: '#a855f7',
+              life: 18,
             });
-            break;
+            if (en.hp <= 0) {
+              en.alive = false;
+              g.score += 180;
+            }
           }
         }
-
-        if (
-          isBossStage &&
-          !boss.defeated &&
-          proj.x + proj.radius > boss.x &&
-          proj.x - proj.radius < boss.x + boss.w &&
-          proj.y + proj.radius > boss.y &&
-          proj.y - proj.radius < boss.y + boss.h
-        ) {
-          g.projectiles.splice(i, 1);
-          boss.hitFlash = 12;
-          if (phaseNumber === 5) {
-            boss.hp = Math.max(0, boss.hp - 7);
-            setBossHp(boss.hp);
-            g.floatingTexts.push({
-              id: `ft-bh-${Date.now()}-${Math.random()}`,
-              x: boss.x + 40,
-              y: boss.y + 30,
-              text: '-7% Sombra',
-              color: '#fbbf24',
-              life: 0,
-              maxLife: 35,
-            });
-          } else if (phaseNumber === 10) {
-            g.floatingTexts.push({
-              id: `ft-bh10-${Date.now()}-${Math.random()}`,
-              x: boss.x + 40,
-              y: boss.y + 30,
-              text: `Luz de ${NURSES[g.activeNurseIdx].name}!`,
-              color: '#34d399',
-              life: 0,
-              maxLife: 35,
-            });
+        if (g.boss && !g.boss.defeated && Math.abs(g.boss.x - g.playerX) < 620) {
+          g.boss.hp = Math.max(0, g.boss.hp - 12);
+          g.lightningEffects.push({
+            x1: g.boss.x + g.boss.w / 2,
+            y1: 20,
+            x2: g.boss.x + g.boss.w / 2,
+            y2: g.boss.y + 40,
+            color: '#c084fc',
+            life: 20,
+          });
+          for (const ped of g.boss.pedestals) {
+            ped.hp = Math.min(100, ped.hp + 25);
           }
         }
+        g.projectiles.push({
+          x: startX,
+          y: startY,
+          vx: dir * 10,
+          vy: 0,
+          r: 10,
+          color: '#8b5cf6',
+          fromPlayer: true,
+          nurseId: nurse.id,
+          powerStyle: 'lightning_bolt',
+          damage: 11,
+          life: 50,
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Trovão de Engajamento!', '#c084fc');
+        break;
+      }
 
-        if (proj.x < g.cameraX - 60 || proj.x > g.cameraX + CANVAS_W + 60) {
-          g.projectiles.splice(i, 1);
+      case 'leticia_mkt': {
+        // 8. Letícia Mkt: Quadruple Viral Arrow Burst
+        [0, 1, 2, 3].forEach((idx) => {
+          g.projectiles.push({
+            x: startX - dir * idx * 16,
+            y: startY + (idx % 2 === 0 ? -4 : 4),
+            vx: dir * 12.2,
+            vy: 0,
+            r: 7,
+            color: '#06b6d4',
+            fromPlayer: true,
+            nurseId: nurse.id,
+            powerStyle: 'viral_arrow',
+            damage: 7,
+            life: 55,
+          });
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Rajada Viral 4x!', '#22d3ee');
+        break;
+      }
+
+      case 'vivian': {
+        // 9. Vivian (Sócia): Royal Star Meteor Shower + Heal +15 HP
+        g.hp = Math.min(g.maxHp, g.hp + 15);
+        setHpUI(g.hp);
+        for (let m = 0; m < 5; m++) {
+          g.projectiles.push({
+            x: g.playerX - 100 + m * 110,
+            y: 40,
+            vx: dir * 3.2,
+            vy: 7.5,
+            r: 12,
+            color: '#eab308',
+            fromPlayer: true,
+            nurseId: nurse.id,
+            powerStyle: 'royal_meteor',
+            piercing: true,
+            damage: 14,
+            life: 65,
+          });
+        }
+        addFloatingText(g.playerX, g.playerY - 14, 'Chuva Real Vittacare!', '#fde047');
+        break;
+      }
+
+      case 'barbara': {
+        // 10. Bárbara (Sócia): Sovereign Emerald-Gold Beam + Royal Shield
+        g.emeraldShieldTimer = 220;
+        g.projectiles.push({
+          x: startX,
+          y: startY,
+          vx: dir * 13.0,
+          vy: 0,
+          r: 15,
+          color: '#14b8a6',
+          fromPlayer: true,
+          nurseId: nurse.id,
+          powerStyle: 'emerald_dragon',
+          piercing: true,
+          damage: 18,
+          life: 65,
+        });
+        addFloatingText(g.playerX, g.playerY - 14, 'Raio Soberano & Escudo!', '#2dd4bf');
+        break;
+      }
+    }
+  }, [addFloatingText, showEducationalMessage]);
+
+  const handleSwitchNurse = useCallback(
+    (idx: number) => {
+      const safeIdx = ((idx % NURSES.length) + NURSES.length) % NURSES.length;
+      gameRef.current.activeNurseIdx = safeIdx;
+      setActiveNurseIndex(safeIdx);
+      onSelectCharacterIdx(safeIdx);
+      soundFX.playCollect();
+      const chosen = NURSES[safeIdx];
+      addFloatingText(
+        gameRef.current.playerX,
+        gameRef.current.playerY - 18,
+        `${chosen.name}: ${chosen.skillName}`,
+        chosen.baseColor
+      );
+    },
+    [addFloatingText, onSelectCharacterIdx]
+  );
+
+  // ==================== KEYBOARD CONTROLS ====================
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const g = gameRef.current;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        g.keys.left = true;
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        g.keys.right = true;
+      } else if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') {
+        e.preventDefault();
+        handleJump();
+      } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') {
+        e.preventDefault();
+        handleUseSkill();
+      } else if (e.code === 'Tab') {
+        e.preventDefault();
+        handleSwitchNurse(g.activeNurseIdx + 1);
+      } else if (e.code.startsWith('Digit')) {
+        const d = parseInt(e.code.replace('Digit', ''), 10);
+        if (d >= 1 && d <= 9) handleSwitchNurse(d - 1);
+        if (d === 0) handleSwitchNurse(9);
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      const g = gameRef.current;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        g.keys.left = false;
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        g.keys.right = false;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [handleJump, handleUseSkill, handleSwitchNurse]);
+
+  // ==================== MAIN GAME LOOP ====================
+  useEffect(() => {
+    let animId = 0;
+
+    const updateGame = () => {
+      const g = gameRef.current;
+      g.frame += 1;
+
+      if (g.invulnFrames > 0) g.invulnFrames -= 1;
+      if (g.skillCooldown > 0) g.skillCooldown -= 1;
+      if (g.orbitalShieldTimer > 0) g.orbitalShieldTimer -= 1;
+      if (g.speedBoostTimer > 0) g.speedBoostTimer -= 1;
+      if (g.emeraldShieldTimer > 0) g.emeraldShieldTimer -= 1;
+      if (g.slowTimer > 0) g.slowTimer -= 1;
+      if (g.educationalBannerTimer > 0) g.educationalBannerTimer -= 1;
+
+      // Update Moving Platforms
+      for (const plat of g.platforms) {
+        if (plat.kind === 'moving' && plat.baseX !== undefined && plat.baseY !== undefined) {
+          const spd = plat.moveSpeed || 0.04;
+          if (plat.moveRangeX) {
+            plat.x = plat.baseX + Math.sin(g.frame * spd) * plat.moveRangeX;
+          }
+          if (plat.moveRangeY) {
+            plat.y = plat.baseY + Math.cos(g.frame * spd) * plat.moveRangeY;
+          }
         }
       }
 
-      if (isBossStage && !boss.defeated) {
-        if (boss.hitFlash > 0) boss.hitFlash--;
+      // Phase 17 Clinic Walk-In Finale Animation
+      if (g.clinicArrivalSequence) {
+        g.clinicDoorProgress = Math.min(1, g.clinicDoorProgress + 0.025);
+        const targetX = (g.clinicX || g.goalX + 180) + 135;
+        if (g.playerX < targetX) {
+          g.playerX += 2.8;
+          g.playerVx = 2.8;
+          g.facing = 1;
+        } else {
+          g.playerVx = 0;
+          if (!g.levelCleared) {
+            g.levelCleared = true;
+            setLevelClearedUI(true);
+            soundFX.playVictoryFanfare();
+            onPhaseComplete(g.phaseNum);
+          }
+        }
+        g.cameraX = Math.max(
+          0,
+          Math.min(g.worldWidth - CANVAS_W, g.playerX - CANVAS_W * 0.42)
+        );
+        return;
+      }
 
-        boss.x += boss.vx;
-        if (boss.x < 560) boss.vx = Math.abs(boss.vx);
-        if (boss.x + boss.w > 1030) boss.vx = -Math.abs(boss.vx);
-        boss.y = 135 + Math.sin(frameCount * 0.045) * 28;
+      if (!g.levelCleared) {
+        // Horizontal Movement
+        const baseSpeed = g.speedBoostTimer > 0 ? 6.4 : g.slowTimer > 0 ? 2.8 : 4.7;
+        if (g.keys.left) {
+          g.playerVx = -baseSpeed;
+          g.facing = -1;
+        } else if (g.keys.right) {
+          g.playerVx = baseSpeed;
+          g.facing = 1;
+        } else {
+          g.playerVx *= 0.78;
+          if (Math.abs(g.playerVx) < 0.1) g.playerVx = 0;
+        }
 
-        const bossHoriz = p.x + p.w > boss.x + 14 && p.x < boss.x + boss.w - 14;
-        if (bossHoriz && p.vy > 0 && prevBottom <= boss.y + 36 && p.y + p.h >= boss.y) {
-          p.vy = -12.6;
-          p.jumpsLeft = 2;
-          boss.hitFlash = 20;
-          soundFX.playBossPurify();
-          if (phaseNumber === 5) {
-            boss.hp = Math.max(0, boss.hp - 16);
-            setBossHp(boss.hp);
-            g.floatingTexts.push({
-              id: `ft-stomp-${Date.now()}`,
-              x: boss.x + 30,
-              y: boss.y - 10,
-              text: 'Super Pulo! -16%',
-              color: '#34d399',
-              life: 0,
-              maxLife: 50,
-            });
+        // Apply Horizontal & Vertical Physics
+        g.playerX = Math.max(12, Math.min(g.worldWidth - 60, g.playerX + g.playerVx));
+        g.playerVy = Math.min(14, g.playerVy + 0.58);
+        const prevBottom = g.playerY + g.playerH;
+        g.playerY += g.playerVy;
+        g.grounded = false;
+
+        // Platform Collisions
+        for (const plat of g.platforms) {
+          const withinX =
+            g.playerX + g.playerW > plat.x + 4 && g.playerX < plat.x + plat.w - 4;
+          if (
+            withinX &&
+            prevBottom <= plat.y + 16 &&
+            g.playerY + g.playerH >= plat.y &&
+            g.playerVy >= 0
+          ) {
+            if (plat.kind === 'spring') {
+              g.playerY = plat.y - g.playerH;
+              g.playerVy = -16.2;
+              g.jumpsUsed = 1;
+              soundFX.playJump();
+              spawnParticles(plat.x + plat.w / 2, plat.y, '#fda4af', 10);
+              addFloatingText(plat.x + plat.w / 2, plat.y - 12, 'SUPER SALTO!', '#fda4af');
+            } else {
+              g.playerY = plat.y - g.playerH;
+              g.playerVy = 0;
+              g.grounded = true;
+              g.jumpsUsed = 0;
+            }
           }
         }
 
-        boss.attackTimer--;
-        if (boss.attackTimer <= 0) {
-          const waveSpeed = 3.8 * Math.min(1.6, g.diffMult * 0.75);
-          if (phaseNumber === 5) {
-            boss.attackTimer = Math.max(48, Math.round(100 / Math.max(1, g.diffMult * 0.7)));
-            const isLowWave = Math.random() > 0.35;
-            g.enemies.push({
-              id: `wave-${Date.now()}`,
-              x: boss.x,
-              y: isLowWave ? 374 : 270,
-              w: 44,
-              h: 46,
-              vx: -waveSpeed,
-              vy: 0,
-              minX: -100,
-              maxX: 1200,
-              alive: true,
-              type: 'wave',
-              label: 'Serpente de Pressão',
-            });
-          } else if (phaseNumber === 10) {
-            if (boss.stage10 === 3) {
-              boss.attackTimer = Math.max(42, Math.round(78 / Math.max(1, g.diffMult * 0.7)));
-              const targetPed = g.pedestals[Math.floor(Math.random() * g.pedestals.length)];
-              if (targetPed) {
-                g.enemies.push({
-                  id: `meteor-${Date.now()}`,
-                  x: targetPed.x + 5,
-                  y: 30,
-                  w: 42,
-                  h: 45,
-                  vx: 0,
-                  vy: 2.8,
-                  minX: 0,
-                  maxX: 1080,
-                  alive: true,
-                  type: 'meteor',
-                  label: 'Golem de Fragmento',
-                });
-              }
-            } else {
-              boss.attackTimer = Math.max(55, Math.round(110 / Math.max(1, g.diffMult * 0.7)));
-              g.enemies.push({
-                id: `frag-${Date.now()}`,
-                x: boss.x,
-                y: 374,
-                w: 42,
-                h: 45,
-                vx: -waveSpeed,
+        // Question Block Hits from below
+        for (const qb of g.questionBlocks) {
+          if (qb.bounceY < 0) qb.bounceY += 1;
+          const withinX = g.playerX + g.playerW > qb.x - 4 && g.playerX < qb.x + qb.w + 4;
+          if (
+            !qb.hit &&
+            withinX &&
+            g.playerY <= qb.y + qb.h + 8 &&
+            g.playerY + g.playerH >= qb.y &&
+            g.playerVy < 0
+          ) {
+            qb.hit = true;
+            qb.bounceY = -10;
+            g.playerVy = 2;
+            g.collectedCount += 1;
+            g.score += 150;
+            g.hp = Math.min(g.maxHp, g.hp + 10);
+            setCollectedUI(g.collectedCount);
+            setScoreUI(g.score);
+            setHpUI(g.hp);
+            soundFX.playCollect();
+            showEducationalMessage(qb.rewardText);
+            spawnParticles(qb.x + qb.w / 2, qb.y, '#fde047', 12);
+          }
+        }
+
+        // Checkpoints
+        for (const cp of g.checkpoints) {
+          if (!cp.reached && Math.abs(g.playerX - cp.x) < 42) {
+            cp.reached = true;
+            g.respawnX = cp.x;
+            g.respawnY = cp.y - g.playerH - 10;
+            g.hp = Math.min(g.maxHp, g.hp + 25);
+            setHpUI(g.hp);
+            setCheckpointReachedUI(true);
+            soundFX.playCheckpoint();
+            spawnParticles(cp.x, cp.y - 60, '#10b981', 16);
+            addFloatingText(cp.x, cp.y - 95, 'CHECKPOINT SALVO! +25 HP', '#34d399');
+          }
+        }
+
+        // Collectibles
+        for (const col of g.collectibles) {
+          if (col.collected) continue;
+          const dx = g.playerX + g.playerW / 2 - (col.x + col.w / 2);
+          const dy = g.playerY + g.playerH / 2 - (col.y + col.h / 2);
+          if (Math.hypot(dx, dy) < 34) {
+            col.collected = true;
+            g.collectedCount += 1;
+            g.score += 100 * g.combo;
+            g.hp = Math.min(g.maxHp, g.hp + 6);
+            setCollectedUI(g.collectedCount);
+            setScoreUI(g.score);
+            setHpUI(g.hp);
+            soundFX.playCollect();
+            spawnParticles(col.x + col.w / 2, col.y + col.h / 2, '#10b981', 8);
+            addFloatingText(col.x, col.y - 8, `+${col.label}`, '#6ee7b7');
+          }
+        }
+
+        // Pit Fall Respawn at Checkpoint
+        if (g.playerY > CANVAS_H + 50) {
+          g.hp = Math.max(25, g.hp - 20);
+          setHpUI(g.hp);
+          g.playerX = g.respawnX;
+          g.playerY = g.respawnY;
+          g.playerVx = 0;
+          g.playerVy = 0;
+          g.invulnFrames = 60;
+          soundFX.playDamage();
+          addFloatingText(g.playerX, g.playerY - 20, 'Retornando ao Checkpoint!', '#fda4af');
+        }
+
+        // Update Enemies
+        for (const en of g.enemies) {
+          if (!en.alive) continue;
+          en.x += en.vx;
+          if (en.x <= en.minX || en.x >= en.maxX) {
+            en.vx *= -1;
+          }
+          if (en.kind === 'jumper') {
+            en.y = en.baseY - Math.abs(Math.sin(g.frame * 0.08)) * 42;
+          } else if (en.kind === 'flyer') {
+            en.y = en.baseY + Math.sin(g.frame * 0.07) * 28;
+          }
+
+          // Ranged Mage Shots
+          if (en.kind === 'mage' && Math.abs(en.x - g.playerX) < 380) {
+            en.shootTimer -= 1;
+            if (en.shootTimer <= 0) {
+              en.shootTimer = 110;
+              const dir = g.playerX > en.x ? 1 : -1;
+              g.projectiles.push({
+                x: en.x + en.w / 2,
+                y: en.y + 18,
+                vx: dir * 5.2,
                 vy: 0,
-                minX: -100,
-                maxX: 1200,
-                alive: true,
-                type: 'fragment',
-                label: 'Espectro Sombrio',
+                r: 7,
+                color: '#c084fc',
+                fromPlayer: false,
+                powerStyle: 'enemy_shot',
+                life: 70,
               });
             }
           }
-        }
 
-        if (phaseNumber === 10 && boss.stage10 === 3) {
-          boss.stage3Timer += 1;
-          for (const ped of g.pedestals) {
-            if (ped.shieldedTimer > 0) ped.shieldedTimer--;
-            if (Math.hypot(p.x - ped.x, p.y - ped.y) < 60) {
-              ped.shieldedTimer = 90;
-              ped.hp = Math.min(100, ped.hp + 0.5);
-            }
-          }
-          if (boss.stage3Timer >= 400) {
-            advanceBoss10ToStage(4);
-          }
-        }
-
-        if (phaseNumber === 10 && boss.stage10 === 4) {
-          let allActive = true;
-          for (const orb of g.unionOrbs) {
-            if (!orb.activated) {
-              allActive = false;
-              const dist = Math.hypot(p.x + p.w / 2 - orb.x, p.y + p.h / 2 - orb.y);
-              if (dist < 46) {
-                orb.activated = true;
-                soundFX.playNurseSkill(NURSES[orb.nurseIdx].pitchOffset);
-                g.floatingTexts.push({
-                  id: `ft-orb-${Date.now()}`,
-                  x: orb.x - 20,
-                  y: orb.y - 20,
-                  text: `✨ ${NURSES[orb.nurseIdx].name} Unido(a)!`,
-                  color: '#fbbf24',
-                  life: 0,
-                  maxLife: 60,
-                });
-              }
-            }
-          }
-          if (g.unionOrbs.length === 4 && allActive) {
-            advanceBoss10ToStage(5);
-          }
-        }
-
-        if (phaseNumber === 5 && boss.hp <= 0 && !boss.defeated) {
-          boss.defeated = true;
-          g.enemies = [];
-          g.arenaLockWidth = g.levelWidth;
-          soundFX.playVictoryFanfare();
-          setEduBannerText(
-            'SOMBRA DA PRESSÃO DERROTADA! Corra para a direita até o Posto da Medalha Cuidado na Gestação! 🏅'
-          );
-          setStageProgressText(
-            'A energia escura desapareceu e o cenário se iluminou! Avance na horizontal para a direita até a bandeira!'
-          );
-        }
-      }
-
-      for (let i = g.enemies.length - 1; i >= 0; i--) {
-        const en = g.enemies[i];
-        if (!en.alive) {
-          g.enemies.splice(i, 1);
-          continue;
-        }
-
-        en.x += en.vx;
-        en.y += en.vy;
-
-        if (en.type === 'walker' || en.type === 'jumper') {
-          if (en.x < en.minX || en.x + en.w > en.maxX) {
-            en.vx = -en.vx;
-          }
-          if (en.type === 'jumper') {
-            en.vy += GRAVITY * 0.85;
-            if (en.y >= 376) {
-              en.y = 376;
-              en.vy = 0;
-              en.jumpTimer = (en.jumpTimer || 45) - 1;
-              if (en.jumpTimer <= 0) {
-                en.vy = -9.5;
-                en.jumpTimer = 50;
-              }
-            }
-          }
-        } else if (en.type === 'meteor') {
-          for (const ped of g.pedestals) {
-            if (Math.hypot(en.x - ped.x, en.y - ped.y) < 42) {
+          // Marcelo's Orbital Shield Contact Damage
+          if (g.orbitalShieldTimer > 0) {
+            const dist = Math.hypot(
+              en.x + en.w / 2 - (g.playerX + g.playerW / 2),
+              en.y + en.h / 2 - (g.playerY + g.playerH / 2)
+            );
+            if (dist < 56) {
               en.alive = false;
-              if (ped.shieldedTimer <= 0) {
-                ped.hp = Math.max(20, ped.hp - 18);
+              g.score += 150;
+              setScoreUI(g.score);
+              soundFX.playCollect();
+              spawnParticles(en.x + en.w / 2, en.y + en.h / 2, '#38bdf8', 10);
+              continue;
+            }
+          }
+
+          // Player vs Enemy Collision
+          const overlapX = g.playerX + g.playerW > en.x + 4 && g.playerX < en.x + en.w - 4;
+          const overlapY = g.playerY + g.playerH > en.y + 4 && g.playerY < en.y + en.h - 4;
+          if (overlapX && overlapY) {
+            // Mario Stomp from above (unless spiker)
+            if (g.playerVy > 0 && g.playerY + g.playerH - g.playerVy <= en.y + 18 && en.kind !== 'spiker') {
+              en.hp -= 1;
+              g.playerVy = -10.5;
+              g.combo += 1;
+              if (en.hp <= 0) {
+                en.alive = false;
+                g.score += 120 * g.combo;
+                setScoreUI(g.score);
+                spawnParticles(en.x + en.w / 2, en.y + en.h / 2, '#34d399', 12);
+                addFloatingText(en.x, en.y - 10, `Purificado! x${g.combo}`, '#fde047');
+              }
+              soundFX.playCollect();
+            } else if (g.invulnFrames <= 0 && g.emeraldShieldTimer <= 0) {
+              g.hp = Math.max(0, g.hp - 14);
+              g.invulnFrames = 55;
+              g.combo = 1;
+              setHpUI(g.hp);
+              soundFX.playDamage();
+              addFloatingText(g.playerX, g.playerY - 15, '-14 Saúde', '#ef4444');
+              if (g.hp <= 0) {
+                g.hp = 100;
+                setHpUI(100);
+                g.playerX = g.respawnX;
+                g.playerY = g.respawnY;
+                addFloatingText(g.playerX, g.playerY - 24, 'Recomeçando no Checkpoint!', '#fde047');
               }
             }
           }
-          if (en.y > 420) en.alive = false;
-        } else if (en.x < -80) {
-          en.alive = false;
         }
 
-        const overlapX = p.x + p.w - 8 > en.x && p.x + 8 < en.x + en.w;
-        const overlapY = p.y + p.h > en.y && p.y < en.y + en.h;
+        // ==================== BOSS AI (PHASES 5, 10, 17) ====================
+        if (g.boss && g.boss.active && !g.boss.defeated) {
+          const b = g.boss;
+          if (b.invulnTimer > 0) b.invulnTimer -= 1;
 
-        if (overlapX && overlapY) {
-          if (p.vy > 0 && prevBottom <= en.y + 24) {
-            en.alive = false;
-            p.vy = -10.4;
-            p.jumpsLeft = 2;
-            soundFX.playCollect();
-            g.score += 120;
-            setScore(g.score);
-            g.floatingTexts.push({
-              id: `ft-st-${Date.now()}-${Math.random()}`,
-              x: en.x,
-              y: en.y - 10,
-              text: 'Superado! +120',
-              color: '#34d399',
-              life: 0,
-              maxLife: 40,
+          // Boss Stage Transitions
+          if (b.hp <= 25) b.stage = 4;
+          else if (b.hp <= 50) b.stage = 3;
+          else if (b.hp <= 75) b.stage = 2;
+          else b.stage = 1;
+
+          // Boss Movement
+          b.x += b.vx;
+          const minArenaX = 1280;
+          const maxArenaX = g.goalX - 180;
+          if (b.x <= minArenaX || b.x >= maxArenaX) {
+            b.vx *= -1;
+          }
+
+          // Boss Projectiles & Waves
+          b.attackTimer -= 1;
+          if (b.attackTimer <= 0) {
+            b.attackTimer = Math.max(38, 78 - b.stage * 10);
+            const dir = g.playerX < b.x ? -1 : 1;
+            g.projectiles.push({
+              x: b.x + b.w / 2,
+              y: b.y + b.h * 0.55,
+              vx: dir * (5.2 + b.stage * 0.6),
+              vy: (Math.random() - 0.5) * 2.2,
+              r: 11,
+              color:
+                b.type === 'PRESSAO'
+                  ? '#ef4444'
+                  : b.type === 'DESCUIDO'
+                  ? '#a855f7'
+                  : '#eab308',
+              fromPlayer: false,
+              powerStyle: 'enemy_shot',
+              life: 90,
             });
-            if (phaseNumber === 5 && !boss.defeated) {
-              boss.hp = Math.max(0, boss.hp - 8);
-              setBossHp(boss.hp);
+
+            // Show educational message periodically during boss fight
+            const msgPool =
+              b.type === 'PRESSAO'
+                ? PHASE5_EDUCATIONAL_MESSAGES
+                : b.type === 'DESCUIDO'
+                ? PHASE10_EDUCATIONAL_MESSAGES
+                : PHASE17_EDUCATIONAL_MESSAGES;
+            const msg = msgPool[Math.floor(Math.random() * msgPool.length)];
+            showEducationalMessage(msg);
+          }
+
+          // Stomp Boss from Above
+          const hitBossX = g.playerX + g.playerW > b.x + 10 && g.playerX < b.x + b.w - 10;
+          const hitBossY = g.playerY + g.playerH > b.y + 10 && g.playerY < b.y + b.h - 10;
+          if (hitBossX && hitBossY) {
+            if (g.playerVy > 0 && g.playerY + g.playerH - g.playerVy <= b.y + 32 && b.invulnTimer <= 0) {
+              b.hp = Math.max(0, b.hp - 12);
+              b.invulnTimer = 24;
+              g.playerVy = -12.5;
+              soundFX.playBossHit();
+              spawnParticles(b.x + b.w / 2, b.y + 20, '#fde047', 16);
+              addFloatingText(b.x + b.w / 2, b.y - 12, '-12 CHEFÃO!', '#fde047');
+              if (b.hp <= 0) {
+                b.defeated = true;
+                g.score += 1000;
+                setScoreUI(g.score);
+                soundFX.playVictoryFanfare();
+                showEducationalMessage('Chefão Derrotado! O caminho da saúde está iluminado!');
+              }
+            } else if (g.invulnFrames <= 0 && g.emeraldShieldTimer <= 0) {
+              g.hp = Math.max(10, g.hp - 16);
+              g.invulnFrames = 60;
+              g.playerVx = g.playerX < b.x ? -8 : 8;
+              g.playerVy = -7;
+              setHpUI(g.hp);
+              soundFX.playDamage();
             }
-          } else if (p.shieldTimer > 0) {
-            en.alive = false;
-            soundFX.playCollect();
-          } else if (p.invulnTimer <= 0) {
-            p.invulnTimer = 50;
-            p.slowTimer = 90;
-            const dmg = Math.round(7 * Math.min(1.8, g.diffMult * 0.7));
-            p.hp = Math.max(15, p.hp - dmg);
-            setPlayerHp(p.hp);
-            soundFX.playWavePulse();
-            g.floatingTexts.push({
-              id: `ft-hit-${Date.now()}`,
-              x: p.x,
-              y: p.y - 15,
-              text: en.type === 'wave' ? 'Onda de Pressão! (Lento)' : `Cuidado! -${dmg} HP`,
-              color: '#f87171',
-              life: 0,
-              maxLife: 50,
-            });
+          }
+        }
+
+        // ==================== UPDATE PROJECTILES ====================
+        for (let i = g.projectiles.length - 1; i >= 0; i--) {
+          const p = g.projectiles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= 1;
+
+          // Leticia's Returning Boomerang
+          if (p.returning && p.life === 40) {
+            p.vx *= -1;
+          }
+
+          // Nina's Homing Fireballs
+          if (p.homing && p.fromPlayer) {
+            let targetX: number | null = null;
+            let targetY: number | null = null;
+            for (const en of g.enemies) {
+              if (en.alive && Math.abs(en.x - p.x) < 350) {
+                targetX = en.x + en.w / 2;
+                targetY = en.y + en.h / 2;
+                break;
+              }
+            }
+            if (targetX === null && g.boss && !g.boss.defeated) {
+              targetX = g.boss.x + g.boss.w / 2;
+              targetY = g.boss.y + g.boss.h / 2;
+            }
+            if (targetX !== null && targetY !== null) {
+              p.vx += Math.sign(targetX - p.x) * 0.45;
+              p.vy += Math.sign(targetY - p.y) * 0.35;
+            }
+          }
+
+          if (p.fromPlayer) {
+            // Hit regular enemies
+            for (const en of g.enemies) {
+              if (!en.alive) continue;
+              if (
+                p.x + p.r > en.x &&
+                p.x - p.r < en.x + en.w &&
+                p.y + p.r > en.y &&
+                p.y - p.r < en.y + en.h
+              ) {
+                en.hp -= p.damage ? Math.ceil(p.damage / 6) : 1;
+                spawnParticles(p.x, p.y, p.color, 8);
+                if (en.hp <= 0) {
+                  en.alive = false;
+                  g.score += 120;
+                  setScoreUI(g.score);
+                  addFloatingText(en.x, en.y - 10, '+120 Purificado!', '#6ee7b7');
+                }
+                if (!p.piercing) {
+                  p.life = 0;
+                  break;
+                }
+              }
+            }
+
+            // Hit Boss
+            if (g.boss && g.boss.active && !g.boss.defeated && p.life > 0) {
+              const b = g.boss;
+              if (
+                p.x + p.r > b.x &&
+                p.x - p.r < b.x + b.w &&
+                p.y + p.r > b.y &&
+                p.y - p.r < b.y + b.h &&
+                b.invulnTimer <= 0
+              ) {
+                const dmg = p.damage || 10;
+                b.hp = Math.max(0, b.hp - dmg);
+                b.invulnTimer = 14;
+                soundFX.playBossHit();
+                spawnParticles(p.x, p.y, '#fde047', 12);
+                addFloatingText(b.x + b.w / 2, b.y - 10, `-${dmg} HP!`, '#fde047');
+                if (!p.piercing) p.life = 0;
+                if (b.hp <= 0) {
+                  b.defeated = true;
+                  g.score += 1200;
+                  setScoreUI(g.score);
+                  soundFX.playVictoryFanfare();
+                  showEducationalMessage('Chefão Derrotado! Avance até a chegada!');
+                }
+              }
+            }
+          } else {
+            // Enemy Projectile hitting Player or Orbital Shield
+            const distPlayer = Math.hypot(
+              p.x - (g.playerX + g.playerW / 2),
+              p.y - (g.playerY + g.playerH / 2)
+            );
+            if (g.orbitalShieldTimer > 0 && distPlayer < 48) {
+              p.life = 0;
+              spawnParticles(p.x, p.y, '#38bdf8', 6);
+            } else if (
+              distPlayer < 26 &&
+              g.invulnFrames <= 0 &&
+              g.emeraldShieldTimer <= 0
+            ) {
+              p.life = 0;
+              g.hp = Math.max(10, g.hp - 12);
+              g.invulnFrames = 45;
+              g.slowTimer = 90;
+              setHpUI(g.hp);
+              soundFX.playDamage();
+              addFloatingText(g.playerX, g.playerY - 12, 'Onda de Pressão!', '#fda4af');
+            }
+          }
+
+          if (p.life <= 0) {
+            g.projectiles.splice(i, 1);
+          }
+        }
+
+        // ==================== CHECK GOAL / FINISH LINE ====================
+        if (g.playerX + g.playerW >= g.goalX) {
+          const bossCleared = !g.boss || g.boss.defeated;
+          if (!bossCleared) {
+            g.playerX = g.goalX - g.playerW - 4;
+            showEducationalMessage('Derrote o Chefão primeiro para liberar a passagem!');
+          } else if (g.collectedCount < g.requiredItems) {
+            // Auto-grant remaining items if boss is defeated or inform player
+            if (g.boss && g.boss.defeated) {
+              g.collectedCount = g.requiredItems;
+              setCollectedUI(g.collectedCount);
+            } else {
+              g.playerX = g.goalX - g.playerW - 4;
+              showEducationalMessage(
+                `Colete pelo menos ${g.requiredItems} itens de cuidado (${g.collectedCount}/${g.requiredItems})!`
+              );
+            }
+          } else {
+            // Stage Complete!
+            if (g.phaseNum === 17) {
+              g.clinicArrivalSequence = true;
+              showEducationalMessage(
+                'LINHA DE CHEGADA ALCANÇADA! Bem-vindos à Clínica Vittacare!'
+              );
+            } else {
+              g.levelCleared = true;
+              setLevelClearedUI(true);
+              soundFX.playVictoryFanfare();
+              onPhaseComplete(g.phaseNum);
+            }
           }
         }
       }
 
-      if (phaseNumber !== 10 && !g.victory && p.x + p.w >= g.goalX) {
-        g.victory = true;
-        setVictoryState(true);
-        soundFX.playVictoryFanfare();
-        onPhaseComplete(phaseNumber);
+      // Update Particles, Lightning & Floating Text
+      for (let i = g.lightningEffects.length - 1; i >= 0; i--) {
+        g.lightningEffects[i].life -= 1;
+        if (g.lightningEffects[i].life <= 0) g.lightningEffects.splice(i, 1);
       }
-
-      if (phaseNumber === 10 && g.finaleWalkMode) {
-        if (p.x > 1780) {
-          g.clinicDoorOpen = Math.min(1, g.clinicDoorOpen + 0.035);
-        }
-        if (!g.victory && p.x + p.w / 2 >= g.goalX) {
-          g.victory = true;
-          setVictoryState(true);
-          soundFX.playVictoryFanfare();
-          onPhaseComplete(10);
-          setEduBannerText('“JORNADA CONCLUÍDA!” · “Cuidar também é prevenir.”');
-          setStageProgressText(
-            'CHEGADA À CLÍNICA VITTACARE CONCLUÍDA! 🏆 Troféu Guardião Vittacare, 🎖️ Título Herói do Cuidado e 🎁 Skin Especial Desbloqueados!'
-          );
-        }
+      for (let i = g.particles.length - 1; i >= 0; i--) {
+        const pt = g.particles[i];
+        pt.x += pt.vx;
+        pt.y += pt.vy;
+        pt.life -= 1;
+        if (pt.life <= 0) g.particles.splice(i, 1);
       }
-
-      const targetCamX = Math.max(
-        0,
-        Math.min(g.arenaLockWidth - CANVAS_W, p.x - CANVAS_W * 0.36)
-      );
-      g.cameraX += (targetCamX - g.cameraX) * 0.14;
-
       for (let i = g.floatingTexts.length - 1; i >= 0; i--) {
         const ft = g.floatingTexts[i];
-        ft.y -= 0.7;
-        ft.life++;
-        if (ft.life >= ft.maxLife) {
-          g.floatingTexts.splice(i, 1);
-        }
+        ft.y -= 0.75;
+        ft.life -= 1;
+        if (ft.life <= 0) g.floatingTexts.splice(i, 1);
       }
 
-      // ========================================================================
-      // RENDER PIXEL-ART WORLD ON CANVAS
-      // ========================================================================
+      // Camera Follow
+      g.cameraX = Math.max(
+        0,
+        Math.min(g.worldWidth - CANVAS_W, g.playerX - CANVAS_W * 0.36)
+      );
+    };
+
+    const loop = () => {
+      updateGame();
       const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.imageSmoothingEnabled = false;
-      ctx.save();
-      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-
-      const isIlluminated =
-        (phaseNumber === 5 && boss.defeated) ||
-        (phaseNumber === 10 && boss.defeated) ||
-        (!isBossStage && g.victory);
-
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
-      if (isIlluminated) {
-        skyGrad.addColorStop(0, '#065f46');
-        skyGrad.addColorStop(0.55, '#0d9488');
-        skyGrad.addColorStop(1, '#fef08a');
-      } else if (phaseNumber === 5) {
-        skyGrad.addColorStop(0, '#0f172a');
-        skyGrad.addColorStop(0.6, '#1e1b4b');
-        skyGrad.addColorStop(1, '#311042');
-      } else if (phaseNumber === 10) {
-        skyGrad.addColorStop(0, '#090d16');
-        skyGrad.addColorStop(0.6, '#2e1065');
-        skyGrad.addColorStop(1, '#1e1b4b');
-      } else {
-        skyGrad.addColorStop(0, '#0c4a6e');
-        skyGrad.addColorStop(0.65, '#0f766e');
-        skyGrad.addColorStop(1, '#134e4a');
-      }
-      ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-      ctx.fillStyle = isIlluminated ? '#fde047' : 'rgba(248, 250, 252, 0.15)';
-      ctx.fillRect(CANVAS_W - 140, 44, 52, 52);
-      if (isIlluminated) {
-        ctx.fillStyle = 'rgba(254, 240, 138, 0.3)';
-        ctx.fillRect(CANVAS_W - 152, 32, 76, 76);
-      }
-
-      ctx.fillStyle = isIlluminated ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.12)';
-      for (let i = 0; i < 8; i++) {
-        const cx = ((i * 320 - g.cameraX * 0.2) % (CANVAS_W + 320)) - 80;
-        const cy = 60 + (i % 3) * 35;
-        ctx.fillRect(cx, cy, 64, 18);
-        ctx.fillRect(cx + 12, cy - 10, 40, 10);
-      }
-
-      ctx.translate(-Math.round(g.cameraX), 0);
-
-      for (const plat of g.platforms) {
-        if (plat.type === 'ground') {
-          ctx.fillStyle = isIlluminated ? '#065f46' : '#1e293b';
-          ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-          ctx.fillStyle = isIlluminated ? '#34d399' : '#10b981';
-          ctx.fillRect(plat.x, plat.y, plat.w, 12);
-          ctx.fillStyle = isIlluminated ? '#047857' : '#334155';
-          for (let gx = plat.x + 8; gx < plat.x + plat.w - 12; gx += 28) {
-            ctx.fillRect(gx, plat.y + 18, 12, 8);
-            ctx.fillRect(gx + 14, plat.y + 30, 12, 8);
-          }
-        } else if (plat.type === 'brick') {
-          ctx.fillStyle = '#b45309';
-          ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-          ctx.strokeStyle = '#fde68a';
-          ctx.lineWidth = 2;
-          for (let bx = plat.x; bx < plat.x + plat.w; bx += 24) {
-            ctx.strokeRect(bx, plat.y, Math.min(24, plat.x + plat.w - bx), plat.h);
-          }
-        } else if (plat.type === 'moving') {
-          ctx.fillStyle = '#0284c7';
-          ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-          ctx.fillStyle = '#7dd3fc';
-          ctx.fillRect(plat.x + 4, plat.y + 4, plat.w - 8, 4);
-        } else {
-          ctx.fillStyle = '#f8fafc';
-          ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-          ctx.fillStyle = '#cbd5e1';
-          ctx.fillRect(plat.x, plat.y + plat.h - 5, plat.w, 5);
-        }
-      }
-
-      if (isBossStage && !boss.defeated) {
-        ctx.fillStyle = 'rgba(168, 85, 247, 0.35)';
-        ctx.fillRect(1065, 0, 16, 420);
-        ctx.fillStyle = '#e879f9';
-        for (let gy = (frameCount * 3) % 32; gy < 420; gy += 32) {
-          ctx.fillRect(1069, gy, 8, 16);
-        }
-      }
-
-      if (phaseNumber === 10) {
-        const signs = [
-          { x: 1140, text: 'CLÍNICA VITTACARE →' },
-          { x: 1560, text: 'CUIDAR É PREVENIR →' },
-          { x: 1910, text: 'CHEGADA VITTACARE →' },
-        ];
-        for (const sg of signs) {
-          ctx.fillStyle = '#78350f';
-          ctx.fillRect(sg.x + 48, 370, 8, 50);
-          ctx.fillStyle = '#047857';
-          ctx.fillRect(sg.x, 344, 110, 28);
-          ctx.strokeStyle = '#fbbf24';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(sg.x, 344, 110, 28);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 9px "JetBrains Mono", monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(sg.text, sg.x + 55, 361);
-        }
-      }
-
-      for (const qb of g.qBlocks) {
-        const by = qb.y + qb.bounceY;
-        ctx.fillStyle = qb.hit ? '#475569' : '#f59e0b';
-        ctx.fillRect(qb.x, by, qb.w, qb.h);
-        ctx.strokeStyle = qb.hit ? '#94a3b8' : '#fef08a';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(qb.x, by, qb.w, qb.h);
-        ctx.fillStyle = '#78350f';
-        ctx.fillRect(qb.x + 4, by + 4, 4, 4);
-        ctx.fillRect(qb.x + qb.w - 8, by + 4, 4, 4);
-        ctx.fillRect(qb.x + 4, by + qb.h - 8, 4, 4);
-        ctx.fillRect(qb.x + qb.w - 8, by + qb.h - 8, 4, 4);
-
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 20px "JetBrains Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(qb.hit ? '✓' : '?', qb.x + qb.w / 2, by + 29);
-      }
-
-      for (const ped of g.pedestals) {
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(ped.x - 24, ped.y, 48, 40);
-        ctx.strokeStyle = ped.color;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(ped.x - 24, ped.y, 48, 40);
-
-        if (ped.shieldedTimer > 0) {
-          ctx.strokeStyle = '#38bdf8';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(ped.x - 32, ped.y - 8, 64, 48);
-        }
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px "Plus Jakarta Sans", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(ped.label, ped.x, ped.y - 12);
-        ctx.fillStyle = '#34d399';
-        ctx.fillText(`${Math.round(ped.hp)}%`, ped.x, ped.y + 24);
-      }
-
-      for (const orb of g.unionOrbs) {
-        const nurse = NURSES[orb.nurseIdx];
-        ctx.fillStyle = orb.activated ? '#fbbf24' : nurse.baseColor;
-        ctx.fillRect(orb.x - 22, orb.y - 22, 44, 44);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(orb.x - 22, orb.y - 22, 44, 44);
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 10px "JetBrains Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(orb.activated ? '✓ UNIDO' : nurse.name, orb.x, orb.y + 4);
-      }
-
-      for (const col of g.collectibles) {
-        if (col.collected) continue;
-        const fy = col.y + Math.sin(col.floatPhase) * 5;
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
-        ctx.fillRect(col.x - 4, fy - 4, 36, 36);
-        ctx.strokeStyle = '#34d399';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(col.x - 4, fy - 4, 36, 36);
-
-        ctx.font = '20px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(col.symbol, col.x + 14, fy + 21);
-      }
-
-      if (phaseNumber !== 10) {
-        ctx.fillStyle = '#fbbf24';
-        ctx.fillRect(g.goalX, 160, 8, 260);
-        ctx.fillStyle = '#10b981';
-        ctx.fillRect(g.goalX + 8, 168, 92, 44);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(g.goalX + 8, 168, 92, 44);
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 11px "JetBrains Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(
-          phaseNumber === 5 ? '🏅 MEDALHA' : `FIM FASE ${phaseNumber}`,
-          g.goalX + 54,
-          194
-        );
-      } else {
-        drawPixelClinicaVittacare(ctx, g.clinicX, 220, g.clinicDoorOpen, frameCount);
-
-        if (g.finaleWalkMode) {
-          let waitSlot = 0;
-          NURSES.slice(0, 4).forEach((n, idx) => {
-            if (n.id === NURSES[g.activeNurseIdx].id) return;
-            const wx = g.clinicX - 45 - waitSlot * 48;
-            drawPixelNurse(
-              ctx,
-              wx,
-              348,
-              n.id,
-              -1,
-              frameCount * 0.1,
-              false,
-              g.goldenSkin,
-              3
-            );
-            waitSlot++;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          renderPlatformerCanvas(ctx, CANVAS_W, CANVAS_H, {
+            ...gameRef.current,
+            biome: currentPhaseMeta.biome,
+            characterSkins,
           });
         }
       }
-
-      // Draw Detailed Pixel-Art Boss (Phase 5 & Phase 10)
-      if (isBossStage && !boss.defeated) {
-        drawPixelBoss(
-          ctx,
-          boss.x,
-          boss.y,
-          boss.w,
-          boss.h,
-          phaseNumber === 5,
-          boss.hitFlash,
-          boss.stage10,
-          frameCount
-        );
-      }
-
-      // Draw Detailed Pixel-Art Villains (Never simple round blobs!)
-      for (const en of g.enemies) {
-        if (!en.alive) continue;
-        drawPixelEnemy(
-          ctx,
-          en.x,
-          en.y,
-          en.type,
-          en.vx >= 0 ? 1 : -1,
-          frameCount,
-          en.label
-        );
-      }
-
-      for (const proj of g.projectiles) {
-        ctx.fillStyle = proj.color;
-        ctx.fillRect(proj.x - 8, proj.y - 8, 16, 16);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(proj.x - 8, proj.y - 8, 16, 16);
-      }
-
-      // Draw ONLY the Single Active Character
-      const activeChar = NURSES[g.activeNurseIdx] || NURSES[0];
-      const isBlinking = p.invulnTimer > 0 && Math.floor(p.invulnTimer / 4) % 2 === 0;
-
-      if (!isBlinking) {
-        if (p.shieldTimer > 0) {
-          ctx.strokeStyle = '#38bdf8';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(p.x - 6, p.y - 6, p.w + 12, p.h + 12);
-        }
-
-        drawPixelNurse(
-          ctx,
-          p.x,
-          p.y,
-          activeChar.id,
-          p.facing,
-          p.animFrame,
-          !p.onGround,
-          g.goldenSkin,
-          3
-        );
-      }
-
-      ctx.fillStyle = g.goldenSkin ? '#fde047' : '#ffffff';
-      ctx.font = 'bold 11px "JetBrains Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(activeChar.name, p.x + p.w / 2, p.y - 10);
-
-      for (const ft of g.floatingTexts) {
-        ctx.fillStyle = ft.color;
-        ctx.font = 'bold 13px "JetBrains Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(ft.text, ft.x + 20, ft.y);
-      }
-
-      ctx.restore();
-
-      animId = requestAnimationFrame(updateAndDraw);
+      animId = requestAnimationFrame(loop);
     };
 
-    animId = requestAnimationFrame(updateAndDraw);
+    animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [phaseNumber, isBossStage, advanceBoss10ToStage, onPhaseComplete]);
+  }, [
+    currentPhaseMeta.biome,
+    characterSkins,
+    addFloatingText,
+    onPhaseComplete,
+    showEducationalMessage,
+    spawnParticles,
+  ]);
 
-  const handleSwitchNurse = (idx: number) => {
-    gameRef.current.activeNurseIdx = idx;
-    setActiveNurseIndex(idx);
-    onSelectCharacterIdx(idx);
-    soundFX.playCollect();
+  // ==================== HORIZONTAL ARCADE MODE (AUTO-LANDSCAPE & 90° ROTATION) ====================
+  useEffect(() => {
+    const checkLandscape = () => {
+      if (window.innerWidth > window.innerHeight && window.innerHeight < 560) {
+        setIsFullscreen(true);
+        setIsRotated90(false);
+      }
+    };
+    checkLandscape();
+    window.addEventListener('resize', checkLandscape);
+    return () => window.removeEventListener('resize', checkLandscape);
+  }, []);
+
+  const toggleHorizontalMode = async () => {
+    const nextState = !isFullscreen;
+    setIsFullscreen(nextState);
+
+    // If user is on a portrait phone (height > width), automatically rotate 90° so it plays horizontally!
+    if (nextState && window.innerHeight > window.innerWidth) {
+      setIsRotated90(true);
+    } else if (!nextState) {
+      setIsRotated90(false);
+    }
+
+    const el = containerRef.current;
+    if (el) {
+      try {
+        if (nextState && !document.fullscreenElement && el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (!nextState && document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      } catch {
+        // Ignore iframe fullscreen restrictions; CSS fixed overlay + 90deg rotation handles it!
+      }
+    }
   };
 
-  const handleCycleNextNurse = () => {
-    const next = (activeNurseIndex + 1) % NURSES.length;
-    handleSwitchNurse(next);
+  const toggleRotate90 = () => {
+    if (!isFullscreen) {
+      setIsFullscreen(true);
+      setIsRotated90(true);
+    } else {
+      setIsRotated90((prev) => !prev);
+    }
   };
 
-  const activeNurseObj = NURSES[activeNurseIndex] || NURSES[0];
+  const handleJoystickStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    joystickTouchIdRef.current = e.pointerId;
+    joystickCenterRef.current = { x: cx, y: cy };
+    updateJoystickByPoint(e.clientX, e.clientY);
+  };
+
+  const handleJoystickMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (joystickTouchIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    updateJoystickByPoint(e.clientX, e.clientY);
+  };
+
+  const handleJoystickEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (joystickTouchIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    joystickTouchIdRef.current = null;
+    setJoystickVec({ x: 0, y: 0 });
+    gameRef.current.keys.left = false;
+    gameRef.current.keys.right = false;
+  };
+
+  const updateJoystickByPoint = (clientX: number, clientY: number) => {
+    const maxR = 38;
+    const rawDx = clientX - joystickCenterRef.current.x;
+    const rawDy = clientY - joystickCenterRef.current.y;
+
+    // When container is rotated 90 degrees clockwise on a portrait phone, remap screen X/Y to local game X/Y!
+    const dx = isRotated90 ? rawDy : rawDx;
+    const dy = isRotated90 ? -rawDx : rawDy;
+
+    const dist = Math.min(maxR, Math.hypot(dx, dy));
+    const ang = Math.atan2(dy, dx);
+    const nx = Math.cos(ang) * (dist / maxR);
+    const ny = Math.sin(ang) * (dist / maxR);
+    setJoystickVec({ x: nx, y: ny });
+
+    const g = gameRef.current;
+    g.keys.left = nx < -0.22;
+    g.keys.right = nx > 0.22;
+    if (ny < -0.62) {
+      handleJump();
+    }
+  };
+
+  const containerStyle: React.CSSProperties = isRotated90
+    ? {
+        position: 'fixed',
+        top: 0,
+        left: '100vw',
+        width: '100vh',
+        height: '100vw',
+        transformOrigin: 'top left',
+        transform: 'rotate(90deg)',
+        zIndex: 60,
+      }
+    : {};
 
   return (
-    <div
+    <section
       ref={containerRef}
+      style={containerStyle}
       className={
-        isFullscreenLandscape
-          ? 'fixed inset-0 z-50 w-screen h-screen bg-slate-950 flex flex-col justify-between overflow-hidden select-none'
-          : 'max-w-[1280px] mx-auto px-3 sm:px-6 py-3 space-y-4 select-none'
+        isFullscreen
+          ? 'fixed inset-0 z-50 bg-[#070b12] overflow-hidden flex flex-row items-stretch justify-between select-none touch-none'
+          : 'max-w-[1320px] mx-auto px-2.5 sm:px-6 py-2.5 space-y-2.5 select-none'
       }
     >
-      {/* Top Compact Bar (Visible in Normal Mode, or slim overlay in Fullscreen Mobile) */}
-      {!isFullscreenLandscape && (
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-3.5 sm:p-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-300 font-medium">
-              <span>Fase {phaseNumber} de 10 (Horizontal)</span>
-              <span aria-hidden="true">·</span>
-              <span>Dificuldade Nível {phaseNumber}/10</span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Personagem: {activeNurseObj.name} ({activeNurseObj.groupLabel})
-              </span>
+      {/* ==================== HORIZONTAL / FULLSCREEN MODE: LEFT JOYPAD COLUMN ==================== */}
+      {isFullscreen && (
+        <div className="w-[116px] sm:w-[134px] shrink-0 bg-slate-950/95 border-r border-slate-800/90 p-2 flex flex-col items-center justify-between z-30 touch-none select-none">
+          {/* Top-Left Mini Status & Quick Actions */}
+          <div className="w-full space-y-1.5">
+            <div className="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold text-center truncate">
+              FASE {phaseNumber}/17
             </div>
-            <p className="text-sm sm:text-lg font-display font-bold text-amber-300">
-              {eduBannerText}
-            </p>
-            <p className="text-xs text-slate-300">{stageProgressText}</p>
+            <button
+              type="button"
+              onClick={toggleRotate90}
+              className={`w-full px-2 py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer border ${
+                isRotated90
+                  ? 'bg-amber-400 text-slate-950 border-amber-300'
+                  : 'bg-slate-900 text-amber-300 border-amber-400/40'
+              }`}
+            >
+              <Smartphone className="w-3 h-3 rotate-90 shrink-0" />
+              <span>{isRotated90 ? 'Desvirar' : 'Girar 90°'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsFullscreen(false);
+                setIsRotated90(false);
+                onOpenWardrobe();
+              }}
+              className="w-full px-2 py-1.5 rounded-lg bg-amber-400/15 border border-amber-400/40 text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <Shirt className="w-3 h-3 shrink-0" />
+              <span>Skins</span>
+            </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono tabular-nums shrink-0">
-            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <Gauge className="w-3.5 h-3.5 text-amber-400 ml-2 mr-1" />
-              {(
-                [
-                  { id: 'NORMAL', label: 'Normal' },
-                  { id: 'HARD', label: 'Difícil' },
-                  { id: 'EXPERT', label: 'Mestre' },
-                ] as { id: DifficultyTier; label: string }[]
-              ).map((d) => (
+          {/* Center-Left: Virtual Analog Joystick */}
+          <div
+            onPointerDown={handleJoystickStart}
+            onPointerMove={handleJoystickMove}
+            onPointerUp={handleJoystickEnd}
+            onPointerCancel={handleJoystickEnd}
+            className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-slate-900 border-2 border-emerald-500/60 shadow-inner flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+          >
+            <div className="absolute inset-1.5 rounded-full border border-slate-800 pointer-events-none" />
+            <div
+              style={{
+                transform: `translate(${joystickVec.x * 18}px, ${joystickVec.y * 18}px)`,
+              }}
+              className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
+            >
+              <div className="w-2 h-2 rounded-full bg-white/80" />
+            </div>
+          </div>
+
+          {/* Bottom-Left: Direct D-Pad Buttons */}
+          <div className="grid grid-cols-3 gap-1 w-full">
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                gameRef.current.keys.left = true;
+              }}
+              onPointerUp={(e) => {
+                e.preventDefault();
+                gameRef.current.keys.left = false;
+              }}
+              onPointerLeave={() => {
+                gameRef.current.keys.left = false;
+              }}
+              className="h-10 rounded-lg bg-slate-800 active:bg-emerald-500 active:text-slate-950 border-b-2 border-slate-950 text-white font-bold text-sm flex items-center justify-center cursor-pointer touch-none"
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleJump();
+              }}
+              className="h-10 rounded-lg bg-slate-800 active:bg-amber-400 active:text-slate-950 border-b-2 border-slate-950 text-amber-300 font-bold text-sm flex items-center justify-center cursor-pointer touch-none"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                gameRef.current.keys.right = true;
+              }}
+              onPointerUp={(e) => {
+                e.preventDefault();
+                gameRef.current.keys.right = false;
+              }}
+              onPointerLeave={() => {
+                gameRef.current.keys.right = false;
+              }}
+              className="h-10 rounded-lg bg-slate-800 active:bg-emerald-500 active:text-slate-950 border-b-2 border-slate-950 text-white font-bold text-sm flex items-center justify-center cursor-pointer touch-none"
+            >
+              ▶
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== NORMAL MODE TOP BARS (Compact 1-Line Strips) ==================== */}
+      {!isFullscreen && (
+        <>
+          <div className="rounded-2xl bg-slate-900/95 border border-slate-800 p-2.5 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold shrink-0">
+                  FASE {phaseNumber}/17
+                </span>
+                <h1 className="text-xs sm:text-sm font-bold text-white truncate">
+                  {currentPhaseMeta.title}
+                </h1>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {checkpointReachedUI && (
+                  <span className="px-2 py-1 rounded-md bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-[11px] font-semibold flex items-center gap-1">
+                    <Flag className="w-3 h-3" /> Checkpoint
+                  </span>
+                )}
+
                 <button
-                  key={d.id}
                   type="button"
-                  onClick={() => setDifficultyTier(d.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-sans font-semibold transition-colors ${
-                    difficultyTier === d.id
-                      ? 'bg-amber-400 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-white'
+                  onClick={() => {
+                    const next = soundFX.toggleLoFiMusic();
+                    setLofiEnabled(next);
+                  }}
+                  title={soundFX.getTrackName(phaseNumber)}
+                  className={`px-2.5 py-1 rounded-lg border text-xs font-bold flex items-center gap-1 cursor-pointer ${
+                    lofiEnabled
+                      ? 'bg-teal-500/20 border-teal-400/50 text-teal-200 hover:bg-teal-500/30'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800'
                   }`}
                 >
-                  {d.label}
+                  <Music className="w-3.5 h-3.5 text-teal-300" />
+                  <span className="hidden md:inline">{soundFX.getTrackName(phaseNumber)}</span>
+                  <span className="md:hidden">{lofiEnabled ? 'Lo-Fi ON' : 'Lo-Fi OFF'}</span>
                 </button>
-              ))}
+
+                <button
+                  type="button"
+                  onClick={onOpenWardrobe}
+                  className="px-2.5 py-1 rounded-lg bg-amber-400/20 hover:bg-amber-400 hover:text-slate-950 border border-amber-400/50 text-amber-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Shirt className="w-3.5 h-3.5" />
+                  <span>Guarda-Roupa (Skins)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => initLevel(phaseNumber)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Reiniciar</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleRotate90}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer border bg-slate-800 hover:bg-slate-700 text-amber-300 border-amber-400/40"
+                >
+                  <Smartphone className="w-3.5 h-3.5 rotate-90" />
+                  <span>Girar 90° (Celular)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleHorizontalMode}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1 cursor-pointer shadow"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" /> Tela Cheia Horizontal
+                </button>
+              </div>
             </div>
 
-            <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">SAÚDE</span>
-              <span className="text-sm font-bold text-emerald-400">{playerHp}/100</span>
+            {/* 17 Levels Single-Row Scroll Strip */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+              {CAMPAIGN_PHASES.map((p) => {
+                const isUnlocked = p.phaseNumber <= maxUnlockedPhase;
+                const isCompleted = completedPhases.includes(p.phaseNumber);
+                const isCurrent = p.phaseNumber === phaseNumber;
+                const isBoss = p.type !== 'CARE_STAGE';
+
+                return (
+                  <button
+                    key={p.phaseNumber}
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => {
+                      if (isUnlocked) onSelectPhase(p.phaseNumber);
+                    }}
+                    title={
+                      isUnlocked
+                        ? `Fase ${p.phaseNumber}: ${p.title}`
+                        : `Fase ${p.phaseNumber} Bloqueada — Conclua a Fase ${p.phaseNumber - 1} primeiro!`
+                    }
+                    className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1 shrink-0 transition-all ${
+                      isCurrent
+                        ? 'bg-emerald-500 text-slate-950 ring-2 ring-amber-300 shadow-md cursor-pointer'
+                        : isCompleted
+                        ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-900 cursor-pointer'
+                        : isUnlocked
+                        ? isBoss
+                          ? 'bg-amber-950/90 text-amber-300 border border-amber-500/50 hover:bg-amber-900 cursor-pointer'
+                          : 'bg-slate-800 text-slate-200 hover:bg-slate-700 cursor-pointer'
+                        : 'bg-slate-950/80 text-slate-600 border border-slate-800/60 opacity-60 cursor-not-allowed'
+                    }`}
+                  >
+                    {!isUnlocked ? (
+                      <Lock className="w-2.5 h-2.5 text-slate-500" />
+                    ) : isCompleted ? (
+                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                    ) : null}
+                    <span>
+                      {p.phaseNumber}
+                      {p.phaseNumber === 5
+                        ? '·BOSS1'
+                        : p.phaseNumber === 10
+                        ? '·BOSS2'
+                        : p.phaseNumber === 17
+                        ? '·FINAL🏥'
+                        : ''}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">
-                {phaseNumber === 10 ? 'CLÍNICA' : 'META'}
-              </span>
-              <span className="text-sm font-bold text-sky-300">{distanceToGoalMeters}m →</span>
+            {/* Single-Row Compact Character Strip (Does not push screen down on mobile!) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-800/80">
+              {NURSES.map((n, idx) => {
+                const isSelected = idx === activeNurseIndex;
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      handleSwitchNurse(idx);
+                    }}
+                    className={`px-2 py-1 rounded-xl border text-left transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-950/95 border-amber-400 ring-1 ring-amber-400/50'
+                        : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <PixelNurseAvatar
+                      nurseId={n.id}
+                      skinId={characterSkins[n.id]}
+                      golden={goldenSkinEquipped}
+                      size={24}
+                      className="shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-white leading-tight">
+                        {n.name}
+                      </div>
+                      <div className="text-[9px] text-emerald-300 leading-tight">
+                        {n.skillName}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-
-            <button
-              type="button"
-              onClick={handleToggleFullscreen}
-              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-sans font-bold flex items-center gap-1.5 whitespace-nowrap shadow-md"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-              <span>Tela Cheia Horizontal (Celular)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => initLevel(phaseNumber, difficultyTier)}
-              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-sans font-semibold flex items-center gap-1.5 whitespace-nowrap"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reiniciar</span>
-            </button>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Victory Celebration Modal / Banner */}
-      {victoryState && (
-        <div
-          className={`${
-            isFullscreenLandscape
-              ? 'absolute top-14 left-4 right-4 z-40'
-              : ''
-          } rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-emerald-950/95 via-teal-900/95 to-amber-950/95 p-5 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4`}
-        >
-          <div className="space-y-1.5 max-w-2xl">
-            <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
-              <Sun className="w-4 h-4" />
-              <span>
-                {isBoss5
-                  ? 'ENERGIA ESCURA DISSIPADA · 🏅 MEDALHA CUIDADO NA GESTAÇÃO'
-                  : isBoss10
-                  ? '🏥 CHEGADA À CLÍNICA VITTACARE · “JORNADA CONCLUÍDA!” · “Cuidar também é prevenir.”'
-                  : `FASE ${phaseNumber} CONCLUÍDA!`}
-              </span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-display font-bold text-white">
-              {isBoss5 && 'Você derrotou a Sombra da Pressão e alcançou a Meta!'}
-              {isBoss10 && 'Você chegou à Clínica Vittacare! Jornada Concluída!'}
-              {!isBossStage && `Fase ${phaseNumber} Superada com ${activeNurseObj.name}!`}
-            </h2>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            {isBoss10 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFullscreenLandscape(false);
-                  onOpenFinale();
-                }}
-                className="px-5 py-3 rounded-xl font-bold text-xs sm:text-sm bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center gap-2 whitespace-nowrap shadow-lg"
-              >
-                <Trophy className="w-4 h-4" />
-                <span>Ver Cerimônia Final na Clínica Vittacare</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onSelectPhase(Math.min(10, phaseNumber + 1))}
-                className="px-5 py-3 rounded-xl font-bold text-xs sm:text-sm bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center gap-2 whitespace-nowrap shadow-lg"
-              >
-                <span>Avançar para Fase {Math.min(10, phaseNumber + 1)}</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Main Horizontal Game Canvas + Overlay Virtual Analog Joystick & Console Arcade Buttons */}
+      {/* ==================== CENTER GAME VIEWPORT (100% UNOBSTRUCTED CANVAS) ==================== */}
       <div
-        className={`relative overflow-hidden border-2 border-slate-800 bg-slate-950 shadow-2xl ${
-          isFullscreenLandscape ? 'flex-1 w-full h-full flex flex-col justify-between' : 'rounded-2xl'
-        }`}
+        className={
+          isFullscreen
+            ? 'relative flex-1 h-full min-w-0 bg-slate-950 flex items-center justify-center overflow-hidden'
+            : 'relative rounded-2xl overflow-hidden border-2 border-slate-800 bg-slate-950 shadow-2xl'
+        }
       >
-        {/* Top Floating HUD inside Fullscreen Landscape Mode */}
-        {isFullscreenLandscape && (
-          <div className="absolute top-2 left-3 right-3 z-30 flex items-center justify-between gap-2 pointer-events-none">
-            <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-700/80 text-xs flex items-center gap-3 pointer-events-auto">
-              <span className="font-bold text-emerald-300">Fase {phaseNumber}/10</span>
-              <span className="font-mono text-white">HP: {playerHp}</span>
-              <span className="font-mono text-sky-300">Meta: {distanceToGoalMeters}m →</span>
-              {isBossStage && (
-                <span className="font-mono text-amber-300">Chefão: {bossHp}%</span>
-              )}
-            </div>
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_W}
+          height={CANVAS_H}
+          className={
+            isFullscreen
+              ? 'w-full h-full object-contain block'
+              : 'w-full h-auto block aspect-[960/500] max-h-[68vh] object-contain mx-auto'
+          }
+        />
 
-            <div className="px-3 py-1 rounded-xl bg-slate-950/80 backdrop-blur-md border border-amber-400/40 text-xs font-display font-semibold text-amber-300 truncate max-w-md hidden sm:block">
-              {eduBannerText}
-            </div>
+        {/* Victory / Next Phase Overlay Modal */}
+        {levelClearedUI && (
+          <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 z-30">
+            <div className="max-w-md w-full rounded-2xl bg-slate-900 border-2 border-amber-400 p-5 text-center space-y-3 shadow-2xl">
+              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400 mx-auto flex items-center justify-center">
+                <Award className="w-7 h-7 text-amber-300" />
+              </div>
+              <div className="text-xs font-mono uppercase tracking-widest text-emerald-300">
+                {phaseNumber === 17
+                  ? 'GRANDE LINHA DE CHEGADA · CLÍNICA VITTACARE!'
+                  : `FASE ${phaseNumber} CONCLUÍDA COM SUCESSO!`}
+              </div>
+              <h2 className="text-xl sm:text-2xl font-display font-bold text-white">
+                {phaseNumber === 5
+                  ? '🏅 Medalha Cuidado na Gestação Conquistada!'
+                  : phaseNumber === 10
+                  ? '✨ Sombra do Descuido Derrotada!'
+                  : phaseNumber === 17
+                  ? '🏆 Jornada Concluída na Clínica Vittacare!'
+                  : currentPhaseMeta.title}
+              </h2>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {currentPhaseMeta.educationalTip}
+              </p>
 
-            <div className="flex items-center gap-2 pointer-events-auto">
-              <button
-                type="button"
-                onClick={() => initLevel(phaseNumber, difficultyTier)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700 text-xs text-white flex items-center gap-1"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={handleToggleFullscreen}
-                className="px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1"
-              >
-                <Minimize2 className="w-3.5 h-3.5" />
-                <span>Sair Tela Cheia</span>
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                {phaseNumber < 17 ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectPhase(phaseNumber + 1)}
+                    className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <span>Avançar para Fase {phaseNumber + 1}</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onOpenFinale}
+                    className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer shadow-lg"
+                  >
+                    <span>Cerimônia Final Vittacare</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => initLevel(phaseNumber)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs cursor-pointer"
+                >
+                  Jogar Novamente
+                </button>
+              </div>
             </div>
           </div>
         )}
-
-        {/* Pixel-Art Horizontal Canvas */}
-        <div className={isFullscreenLandscape ? 'flex-1 flex items-center justify-center bg-slate-950 overflow-hidden' : ''}>
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_W}
-            height={CANVAS_H}
-            style={{ imageRendering: 'pixelated' }}
-            className={
-              isFullscreenLandscape
-                ? 'w-full h-full object-contain block'
-                : 'w-full h-auto block'
-            }
-          />
-        </div>
-
-        {/* ====================================================================
-            VIRTUAL ANALOG JOYSTICK + SLEEK 3D ARCADE BUTTONS BAR
-            (Overlay in Fullscreen Landscape, or docked console deck in regular view)
-            ==================================================================== */}
-        <div
-          className={
-            isFullscreenLandscape
-              ? 'absolute inset-x-0 bottom-2 z-30 px-5 pointer-events-none flex items-end justify-between'
-              : 'bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800/90 p-4 flex flex-col lg:flex-row items-center justify-between gap-5'
-          }
-        >
-          {/* LEFT: Interactive Virtual Analog Joystick (Cursor em Joystick) */}
-          <div className="flex items-center gap-4 pointer-events-auto">
-            <div
-              ref={joystickBaseRef}
-              onPointerDown={(e) => {
-                e.currentTarget.setPointerCapture(e.pointerId);
-                setJoyActive(true);
-                updateJoystickFromClientXY(e.clientX, e.clientY);
-              }}
-              onPointerMove={(e) => {
-                if (!joyActive) return;
-                updateJoystickFromClientXY(e.clientX, e.clientY);
-              }}
-              onPointerUp={resetJoystick}
-              onPointerCancel={resetJoystick}
-              className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-slate-800/90 via-slate-900/95 to-slate-950 border-2 border-emerald-400/50 shadow-[0_0_25px_rgba(16,185,129,0.2)] flex items-center justify-center touch-none cursor-grab active:cursor-grabbing"
-            >
-              {/* Outer directional ticks */}
-              <span className="absolute top-1.5 text-[9px] font-mono text-emerald-300/70">▲ PULO</span>
-              <span className="absolute bottom-1.5 text-[9px] font-mono text-slate-500">▼</span>
-              <span className="absolute left-2 text-[10px] font-mono text-emerald-300/80">◀</span>
-              <span className="absolute right-2 text-[10px] font-mono text-emerald-300/80">▶</span>
-
-              {/* Inner ring */}
-              <div className="w-16 h-16 rounded-full border border-slate-700/80 bg-slate-950/60" />
-
-              {/* Draggable Thumbstick Knob */}
-              <div
-                style={{
-                  transform: `translate(${joyPos.x}px, ${joyPos.y}px)`,
-                }}
-                className={`absolute w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-700 border-2 border-white/80 shadow-[0_4px_15px_rgba(16,185,129,0.6)] flex items-center justify-center transition-transform ${
-                  joyActive ? 'duration-0 scale-105' : 'duration-150'
-                }`}
-              >
-                <div className="w-5 h-5 rounded-full bg-white/30 blur-[1px]" />
-              </div>
-            </div>
-
-            {!isFullscreenLandscape && (
-              <div className="hidden sm:block text-xs text-slate-400 space-y-0.5 max-w-[170px]">
-                <div className="font-bold text-white">Joystick Analógico</div>
-                <p className="text-[11px] leading-snug">
-                  Arraste o cursor para correr na horizontal ou para cima para pular!
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* CENTER: All 10 Playable Characters Selector (Hidden in Fullscreen to keep view clean, replaced by quick switch button) */}
-          {!isFullscreenLandscape && (
-            <div className="flex-1 max-w-2xl">
-              <div className="text-[11px] font-semibold text-slate-400 mb-1.5 text-center">
-                Escolha seu Personagem em Pixel Art (1 por vez · Enfermagem, Marketing Empresarial & Sócias Elegantes):
-              </div>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 justify-start sm:justify-center">
-                {NURSES.map((char, idx) => {
-                  const isSelected = activeNurseIndex === idx;
-                  return (
-                    <button
-                      key={char.id}
-                      type="button"
-                      onClick={() => handleSwitchNurse(idx)}
-                      className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 whitespace-nowrap border shrink-0 ${
-                        isSelected
-                          ? 'bg-emerald-950/90 border-emerald-400 text-white shadow-md scale-105'
-                          : 'bg-slate-900/90 text-slate-300 hover:bg-slate-800 border-slate-800'
-                      }`}
-                    >
-                      <PixelNurseAvatar
-                        nurseId={char.id as CharacterId}
-                        goldenSkin={goldenSkinEquipped}
-                        scale={1.4}
-                        animate={isSelected}
-                      />
-                      <div className="text-left">
-                        <div className="font-bold text-[11px] leading-tight">{char.name}</div>
-                        <div className="text-[9px] text-emerald-300 leading-tight">
-                          {char.skillName}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* RIGHT: Sleek 3D Tactile Console Action Buttons */}
-          <div className="flex items-center gap-3 sm:gap-4 pointer-events-auto">
-            {/* Switch Character Arcade Button */}
-            <button
-              type="button"
-              onClick={handleCycleNextNurse}
-              className="group relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-b from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 active:translate-y-1 border-2 border-indigo-200/80 shadow-[0_5px_0_#1e1b4b,0_8px_20px_rgba(99,102,241,0.45)] flex flex-col items-center justify-center text-white transition-all"
-            >
-              <Users className="w-4 h-4 mb-0.5" />
-              <span className="text-[9px] font-bold tracking-tight uppercase">Trocar</span>
-            </button>
-
-            {/* Special Power B-Button */}
-            <button
-              type="button"
-              onClick={triggerNurseSkill}
-              className="group relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-b from-amber-400 via-amber-500 to-orange-600 hover:from-amber-300 hover:to-orange-500 active:translate-y-1 border-2 border-amber-100 shadow-[0_6px_0_#78350f,0_10px_24px_rgba(245,158,11,0.5)] flex flex-col items-center justify-center text-slate-950 transition-all"
-            >
-              <Zap className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
-              <span className="text-[10px] font-extrabold tracking-tight uppercase">Poder</span>
-            </button>
-
-            {/* Jump / Double Jump A-Button */}
-            <button
-              type="button"
-              onClick={handleJumpAction}
-              className="group relative w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-gradient-to-b from-emerald-400 via-emerald-500 to-teal-700 hover:from-emerald-300 hover:to-teal-600 active:translate-y-1 border-2 border-emerald-100 shadow-[0_6px_0_#064e3b,0_10px_28px_rgba(16,185,129,0.55)] flex flex-col items-center justify-center text-slate-950 transition-all"
-            >
-              <ArrowUp className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.5]" />
-              <span className="text-[11px] font-extrabold tracking-tight uppercase">Pular</span>
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Horizontal Level Progression Selector (Hidden when in Fullscreen Mobile Mode) */}
-      {!isFullscreenLandscape && (
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span className="text-xs font-semibold text-slate-300">
-            Fases Horizontais (Nível 1 a 10 com chegada à Clínica Vittacare no Nível 10):
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {CAMPAIGN_PHASES.map((ph) => {
-              const isCurrent = ph.phaseNumber === phaseNumber;
-              const isBoss = ph.phaseNumber === 5 || ph.phaseNumber === 10;
-              return (
-                <button
-                  key={ph.phaseNumber}
-                  type="button"
-                  onClick={() => onSelectPhase(ph.phaseNumber)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                    isCurrent
-                      ? 'bg-emerald-400 text-slate-950 font-bold'
-                      : isBoss
-                      ? 'bg-amber-400/20 text-amber-300 border border-amber-400/50 hover:bg-amber-400/30'
-                      : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-                  }`}
-                >
-                  {ph.phaseNumber === 5
-                    ? '⚔️ Fase 5 (Pressão)'
-                    : ph.phaseNumber === 10
-                    ? '🏥 Fase 10 (Descuido + Clínica)'
-                    : `Fase ${ph.phaseNumber}`}
-                </button>
-              );
-            })}
+      {/* ==================== HORIZONTAL / FULLSCREEN MODE: RIGHT JOYPAD COLUMN ==================== */}
+      {isFullscreen && (
+        <div className="w-[116px] sm:w-[134px] shrink-0 bg-slate-950/95 border-l border-slate-800/90 p-2 flex flex-col items-center justify-between z-30 touch-none select-none">
+          {/* Top-Right Exit & Restart */}
+          <div className="w-full space-y-1.5">
+            <button
+              type="button"
+              onClick={toggleHorizontalMode}
+              className="w-full px-2 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer shadow"
+            >
+              <Minimize2 className="w-3 h-3 shrink-0" />
+              <span>Sair Tela Cheia</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => initLevel(phaseNumber)}
+              className="w-full px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3 shrink-0" />
+              <span>Reiniciar</span>
+            </button>
+          </div>
+
+          {/* Right Thumb Console Action Buttons (Never overlapping canvas!) */}
+          <div className="w-full space-y-2 my-auto">
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleJump();
+              }}
+              className="w-full py-3 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-500 active:translate-y-0.5 border-b-4 border-amber-700 text-slate-950 font-extrabold text-xs shadow-lg flex flex-col items-center justify-center cursor-pointer touch-none"
+            >
+              <span>▲ PULAR</span>
+            </button>
+
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleUseSkill();
+              }}
+              className="w-full py-3 rounded-2xl bg-gradient-to-b from-emerald-400 to-teal-500 active:translate-y-0.5 border-b-4 border-teal-800 text-slate-950 font-extrabold text-xs shadow-lg flex flex-col items-center justify-center cursor-pointer touch-none"
+            >
+              <span className="flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5" /> PODER
+              </span>
+              <span className="text-[9px] font-mono opacity-85 truncate max-w-[96px]">
+                {activeNurse.skillName}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleSwitchNurse(activeNurseIndex + 1);
+              }}
+              className="w-full py-2.5 rounded-2xl bg-gradient-to-b from-indigo-500 to-indigo-600 active:translate-y-0.5 border-b-4 border-indigo-900 text-white font-bold text-[11px] shadow-lg flex items-center justify-center gap-1.5 cursor-pointer touch-none"
+            >
+              <PixelNurseAvatar
+                nurseId={activeNurse.id}
+                skinId={characterSkins[activeNurse.id]}
+                golden={goldenSkinEquipped}
+                size={20}
+              />
+              <span>TROCAR</span>
+            </button>
+          </div>
+
+          <div className="text-[10px] text-slate-400 font-mono text-center truncate w-full">
+            {activeNurse.name}
           </div>
         </div>
       )}
-    </div>
+
+      {/* ==================== NORMAL MODE BOTTOM CONTROL DOCK (Outside Canvas) ==================== */}
+      {!isFullscreen && (
+        <div className="rounded-2xl bg-slate-900/95 border border-slate-800 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3 touch-none select-none">
+          {/* Left: Virtual Analog Joystick + Direct Touch Buttons */}
+          <div className="flex items-center gap-2.5">
+            <div
+              onPointerDown={handleJoystickStart}
+              onPointerMove={handleJoystickMove}
+              onPointerUp={handleJoystickEnd}
+              onPointerCancel={handleJoystickEnd}
+              className="relative w-16 h-16 rounded-full bg-slate-950 border-2 border-emerald-500/60 shadow-inner flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+            >
+              <div className="absolute inset-1.5 rounded-full border border-slate-800 pointer-events-none" />
+              <div
+                style={{
+                  transform: `translate(${joystickVec.x * 18}px, ${joystickVec.y * 18}px)`,
+                }}
+                className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 border-2 border-white shadow-lg pointer-events-none flex items-center justify-center"
+              >
+                <div className="w-2 h-2 rounded-full bg-white/80" />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  gameRef.current.keys.left = true;
+                }}
+                onPointerUp={(e) => {
+                  e.preventDefault();
+                  gameRef.current.keys.left = false;
+                }}
+                onPointerLeave={() => {
+                  gameRef.current.keys.left = false;
+                }}
+                className="w-11 h-11 text-base rounded-xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 border-b-4 border-slate-950 text-white font-bold flex items-center justify-center cursor-pointer touch-none"
+              >
+                ◀
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleJump();
+                }}
+                className="w-11 h-11 text-base rounded-xl bg-slate-800 active:bg-amber-400 active:text-slate-950 border-b-4 border-slate-950 text-amber-300 font-bold flex items-center justify-center cursor-pointer touch-none"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  gameRef.current.keys.right = true;
+                }}
+                onPointerUp={(e) => {
+                  e.preventDefault();
+                  gameRef.current.keys.right = false;
+                }}
+                onPointerLeave={() => {
+                  gameRef.current.keys.right = false;
+                }}
+                className="w-11 h-11 text-base rounded-xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 border-b-4 border-slate-950 text-white font-bold flex items-center justify-center cursor-pointer touch-none"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+
+          {/* Center: Compact Active Nurse Info */}
+          <div className="flex-1 min-w-[200px] rounded-xl bg-slate-950/90 border border-slate-800 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-emerald-300">
+                {activeNurse.name} · {activeNurse.skillName}
+              </span>
+              <span className="text-[11px] font-mono text-amber-300">
+                Meta: {collectedUI}/{requiredUI}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 mt-0.5 truncate">
+              🎯 {objectiveTextUI}
+            </p>
+          </div>
+
+          {/* Right: 3D Console Action Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleJump();
+              }}
+              className="px-3.5 py-2.5 min-w-[72px] rounded-2xl bg-gradient-to-b from-amber-400 to-amber-500 active:translate-y-0.5 border-b-4 border-amber-700 text-slate-950 font-bold text-xs shadow-lg flex flex-col items-center cursor-pointer touch-none"
+            >
+              <span>PULAR</span>
+              <span className="text-[10px] font-mono opacity-80">(Espaço)</span>
+            </button>
+
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleUseSkill();
+              }}
+              className="px-3.5 py-2.5 min-w-[96px] rounded-2xl bg-gradient-to-b from-emerald-400 to-teal-500 active:translate-y-0.5 border-b-4 border-teal-800 text-slate-950 font-bold text-xs shadow-lg flex flex-col items-center cursor-pointer touch-none"
+            >
+              <span className="flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5" /> PODER
+              </span>
+              <span className="text-[10px] font-mono opacity-80 truncate max-w-[88px]">
+                {activeNurse.skillName}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                handleSwitchNurse(activeNurseIndex + 1);
+              }}
+              className="px-3 py-2.5 min-w-[70px] rounded-2xl bg-gradient-to-b from-indigo-500 to-indigo-600 active:translate-y-0.5 border-b-4 border-indigo-900 text-white font-bold text-xs shadow-lg flex flex-col items-center cursor-pointer touch-none"
+            >
+              <span>TROCAR</span>
+              <span className="text-[10px] font-mono opacity-80">(Tab)</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 };

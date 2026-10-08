@@ -110,9 +110,10 @@ export const VittacareFinale: React.FC<VittacareFinaleProps> = ({
             </p>
 
             <p className="text-xs sm:text-sm text-slate-200 max-w-2xl mt-3 leading-relaxed">
-              Após derrotar a <strong>Sombra da Pressão</strong> e a <strong>Sombra do Descuido</strong>, os quatro
-              enfermeiros — <strong>Stephanie, Marcelo, Bianca e Leticia</strong> — atravessam juntos as portas abertas
-              da <strong>Clínica Vittacare</strong>, celebrando a saúde, a informação e a autonomia feminina.
+              Após derrotar a <strong>Sombra da Pressão</strong> (Fase 5), a <strong>Sombra do Descuido</strong> (Fase 10)
+              e o <strong>Soberano do Silêncio &amp; Adiamento</strong> (Fase 17), os protagonistas —{' '}
+              <strong>Stephanie, Marcelo, Bianca e Leticia</strong> — junto à equipe de Marketing e às Sócias atravessam a{' '}
+              <strong>Linha de Chegada da Clínica Vittacare</strong>!
             </p>
           </div>
         </div>
@@ -124,7 +125,7 @@ export const VittacareFinale: React.FC<VittacareFinaleProps> = ({
         <div className="lg:col-span-7 space-y-4">
           <div>
             <h2 className="text-xl sm:text-2xl font-bold text-white">
-              Recompensas da Jornada Conquistadas
+              Recompensas da Jornada Conquistadas (17 Fases)
             </h2>
             <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
               Cada vitória simboliza uma conquista para o bem-estar, a prevenção e a autonomia pessoal.
@@ -140,10 +141,10 @@ export const VittacareFinale: React.FC<VittacareFinaleProps> = ({
                 </span>
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               </div>
-              <div className="text-xs text-amber-300 font-medium">Recompensa Suprema · Fase 10</div>
+              <div className="text-xs text-amber-300 font-medium">Recompensa Suprema · Fase 17 (Linha de Chegada)</div>
               <h3 className="text-lg font-bold text-white">Troféu Guardião Vittacare</h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Concedido por superar todos os fragmentos da Sombra do Descuido e conduzir a equipe até a Clínica Vittacare.
+                Concedido por vencer os 3 Chefões (Fases 5, 10 e 17) e cruzar a Linha de Chegada na Clínica Vittacare.
               </p>
             </div>
 

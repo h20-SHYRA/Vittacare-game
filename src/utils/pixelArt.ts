@@ -1,4 +1,4 @@
-import { CharacterId, CharacterGroup } from '../data/gameData';
+import { CharacterId, CharacterGroup, SkinId } from '../data/gameData';
 
 export type NurseId = CharacterId;
 
@@ -236,13 +236,93 @@ export function drawPixelNurse(
   facing: 1 | -1,
   animTick: number,
   isJumping: boolean,
-  goldenSkin: boolean,
+  skinOption: boolean | SkinId = 'padrao',
   scale: number = 3
 ) {
   const pal = CHARACTER_PIXEL_PALETTES[charId] || CHARACTER_PIXEL_PALETTES.stephanie;
-  const primaryOutfit = goldenSkin ? '#fef08a' : pal.outfitPrimary;
-  const secondaryOutfit = goldenSkin ? '#f59e0b' : pal.outfitSecondary;
-  const accent = goldenSkin ? '#d97706' : pal.accentColor;
+  const skinId: SkinId =
+    typeof skinOption === 'boolean'
+      ? skinOption
+        ? 'dourada'
+        : 'padrao'
+      : skinOption || 'padrao';
+
+  let primaryOutfit = pal.outfitPrimary;
+  let secondaryOutfit = pal.outfitSecondary;
+  let accent = pal.accentColor;
+  let bottomCol = pal.bottomColor;
+  let shoeCol = pal.shoes;
+  let capeColor: string | null = null;
+  let visorColor: string | null = null;
+  let crownColor: string | null = null;
+  let sparkleColor: string | null = null;
+
+  switch (skinId) {
+    case 'dourada':
+      primaryOutfit = '#fef08a';
+      secondaryOutfit = '#f59e0b';
+      accent = '#d97706';
+      bottomCol = '#b45309';
+      shoeCol = '#78350f';
+      crownColor = '#fde047';
+      sparkleColor = '#fde047';
+      break;
+    case 'esmeralda':
+      primaryOutfit = '#065f46';
+      secondaryOutfit = '#a7f3d0';
+      accent = '#34d399';
+      bottomCol = '#022c22';
+      shoeCol = '#10b981';
+      sparkleColor = '#6ee7b7';
+      break;
+    case 'super_heroi':
+      primaryOutfit = '#1d4ed8';
+      secondaryOutfit = '#fde047';
+      accent = '#ef4444';
+      bottomCol = '#1e3a8a';
+      shoeCol = '#dc2626';
+      capeColor = '#dc2626';
+      visorColor = '#38bdf8';
+      break;
+    case 'cyber_neon':
+      primaryOutfit = '#0f172a';
+      secondaryOutfit = '#22d3ee';
+      accent = '#f43f5e';
+      bottomCol = '#1e1b4b';
+      shoeCol = '#06b6d4';
+      visorColor = '#22d3ee';
+      sparkleColor = '#22d3ee';
+      break;
+    case 'gala_diamante':
+      primaryOutfit = '#1e1b4b';
+      secondaryOutfit = '#f8fafc';
+      accent = '#c7d2fe';
+      bottomCol = '#090d16';
+      shoeCol = '#e2e8f0';
+      crownColor = '#e2e8f0';
+      sparkleColor = '#ffffff';
+      break;
+    case 'rosa_quartzo':
+      primaryOutfit = '#fce7f3';
+      secondaryOutfit = '#ec4899';
+      accent = '#f43f5e';
+      bottomCol = '#831843';
+      shoeCol = '#be185d';
+      sparkleColor = '#f9a8d4';
+      break;
+    case 'chama_real':
+      primaryOutfit = '#991b1b';
+      secondaryOutfit = '#fde047';
+      accent = '#f97316';
+      bottomCol = '#450a0a';
+      shoeCol = '#ea580c';
+      capeColor = '#ea580c';
+      crownColor = '#fbbf24';
+      sparkleColor = '#fb923c';
+      break;
+    default:
+      break;
+  }
 
   ctx.save();
   const widthPx = 18 * scale;
@@ -258,12 +338,19 @@ export function drawPixelNurse(
   const walkCycle = Math.floor(animTick) % 4;
   const bounceY = !isJumping && (walkCycle === 1 || walkCycle === 3) ? -1 : 0;
 
-  // Golden skin sparkle pixels
-  if (goldenSkin) {
-    px(1, 3 + bounceY, 1, 1, '#fde047');
-    px(16, 5 + bounceY, 1, 1, '#fde047');
-    px(2, 16 + bounceY, 1, 1, '#f59e0b');
-    px(15, 14 + bounceY, 1, 1, '#f59e0b');
+  // Flowing Heroic Cape Behind Character (super_heroi / chama_real)
+  if (capeColor) {
+    const capeWave = walkCycle === 1 || isJumping ? -1 : walkCycle === 3 ? 1 : 0;
+    px(1, 12 + bounceY, 4, 9 + capeWave, capeColor);
+    px(0, 15 + bounceY + capeWave, 3, 6, '#fbbf24');
+  }
+
+  // Skin Sparkle Pixels
+  if (sparkleColor) {
+    px(1, 3 + bounceY, 1, 1, sparkleColor);
+    px(16, 5 + bounceY, 1, 1, sparkleColor);
+    px(2, 16 + bounceY, 1, 1, accent);
+    px(15, 14 + bounceY, 1, 1, sparkleColor);
   }
 
   // ==================== 1. HAIR BACK LAYER ====================
@@ -314,8 +401,12 @@ export function drawPixelNurse(
     px(14, 8 + bounceY, 1, 3, pal.hairHighlight);
   }
 
-  // ==================== 2. HEADGEAR / LUXURY HAIRPIN ====================
-  if (pal.group === 'ENFERMAGEM') {
+  // ==================== 2. HEADGEAR / CROWN / LUXURY HAIRPIN ====================
+  if (crownColor) {
+    px(5, 0 + bounceY, 8, 2, crownColor);
+    px(6, -1 + bounceY, 2, 1, '#ffffff');
+    px(9, -1 + bounceY, 2, 1, accent);
+  } else if (pal.group === 'ENFERMAGEM') {
     px(6, 0 + bounceY, 6, 2, '#ffffff');
     px(8, 0 + bounceY, 2, 2, accent);
   } else if (pal.group === 'SOCIAS') {
@@ -342,9 +433,14 @@ export function drawPixelNurse(
     px(5, 8 + bounceY, 1, 1, '#fbbf24');
   }
 
-  // Eyes & Lipstick
-  px(10, 6 + bounceY, 2, 2, pal.eye);
-  px(10, 6 + bounceY, 1, 1, '#ffffff');
+  // Eyes / Visor & Lipstick
+  if (visorColor) {
+    px(8, 6 + bounceY, 6, 2, visorColor);
+    px(9, 6 + bounceY, 3, 1, '#ffffff');
+  } else {
+    px(10, 6 + bounceY, 2, 2, pal.eye);
+    px(10, 6 + bounceY, 1, 1, '#ffffff');
+  }
   px(10, 5 + bounceY, 2, 1, pal.hair);
   px(10, 9 + bounceY, 2, 1, pal.mouth);
 
@@ -404,8 +500,6 @@ export function drawPixelNurse(
   }
 
   // ==================== 6. SKIRT & LEGS (FOR MARKETING WOMEN & SÓCIAS) OR TROUSERS ====================
-  const bottomCol = goldenSkin ? '#b45309' : pal.bottomColor;
-
   if (pal.wearsSkirt) {
     // Fitted Pencil Skirt (Saia Executiva / Saia de Alta Costura) from y=17 to y=20
     px(4, 17 + bounceY, 10, 3, bottomCol);
@@ -423,57 +517,57 @@ export function drawPixelNurse(
     const heelTip = pal.heelAccent || '#fbbf24';
     if (isJumping) {
       px(5, 20, 3, 2, pal.skinShadow);
-      px(4, 22, 4, 2, pal.shoes);
+      px(4, 22, 4, 2, shoeCol);
       px(4, 23, 1, 1, heelTip);
 
       px(10, 19, 3, 2, pal.skin);
-      px(10, 21, 4, 2, pal.shoes);
+      px(10, 21, 4, 2, shoeCol);
       px(10, 22, 1, 1, heelTip);
     } else if (walkCycle === 1) {
       px(4, 20, 3, 2, pal.skinShadow);
-      px(3, 22, 4, 2, pal.shoes);
+      px(3, 22, 4, 2, shoeCol);
       px(3, 23, 1, 1, heelTip);
 
       px(10, 20, 3, 2, pal.skin);
-      px(11, 22, 4, 2, pal.shoes);
+      px(11, 22, 4, 2, shoeCol);
       px(11, 23, 1, 1, heelTip);
     } else if (walkCycle === 3) {
       px(6, 20, 3, 2, pal.skinShadow);
-      px(6, 22, 4, 2, pal.shoes);
+      px(6, 22, 4, 2, shoeCol);
 
       px(9, 20, 3, 2, pal.skin);
-      px(9, 22, 4, 2, pal.shoes);
+      px(9, 22, 4, 2, shoeCol);
     } else {
       px(5, 20, 3, 2, pal.skinShadow);
-      px(5, 22, 4, 2, pal.shoes);
+      px(5, 22, 4, 2, shoeCol);
       px(5, 23, 1, 1, heelTip);
 
       px(10, 20, 3, 2, pal.skin);
-      px(10, 22, 4, 2, pal.shoes);
+      px(10, 22, 4, 2, shoeCol);
       px(10, 23, 1, 1, heelTip);
     }
   } else {
     // Full Trousers (Enfermagem & Ronald Mkt)
     if (isJumping) {
       px(4, 19, 4, 3, bottomCol);
-      px(3, 22, 4, 2, pal.shoes);
+      px(3, 22, 4, 2, shoeCol);
       px(10, 18, 4, 3, bottomCol);
-      px(11, 21, 4, 2, pal.shoes);
+      px(11, 21, 4, 2, shoeCol);
     } else if (walkCycle === 1) {
       px(4, 19, 4, 3, bottomCol);
-      px(3, 22, 5, 2, pal.shoes);
+      px(3, 22, 5, 2, shoeCol);
       px(10, 19, 4, 3, bottomCol);
-      px(11, 22, 5, 2, pal.shoes);
+      px(11, 22, 5, 2, shoeCol);
     } else if (walkCycle === 3) {
       px(6, 19, 4, 3, bottomCol);
-      px(6, 22, 5, 2, pal.shoes);
+      px(6, 22, 5, 2, shoeCol);
       px(8, 19, 4, 3, bottomCol);
-      px(9, 22, 5, 2, pal.shoes);
+      px(9, 22, 5, 2, shoeCol);
     } else {
       px(5, 19, 3, 3, bottomCol);
-      px(5, 22, 4, 2, pal.shoes);
+      px(5, 22, 4, 2, shoeCol);
       px(10, 19, 3, 3, bottomCol);
-      px(10, 22, 4, 2, pal.shoes);
+      px(10, 22, 4, 2, shoeCol);
     }
   }
 

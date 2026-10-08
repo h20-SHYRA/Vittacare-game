@@ -20,6 +20,117 @@ export type BiomeType =
   | 'STARLIGHT_VALLEY'
   | 'ROYAL_CITADEL';
 
+export type SkinId =
+  | 'padrao'
+  | 'dourada'
+  | 'esmeralda'
+  | 'super_heroi'
+  | 'cyber_neon'
+  | 'gala_diamante'
+  | 'rosa_quartzo'
+  | 'chama_real';
+
+export interface WardrobeSkinOption {
+  id: SkinId;
+  name: string;
+  badge: string;
+  description: string;
+  previewBorder: string;
+  accentHex: string;
+  hasCape?: boolean;
+  hasVisor?: boolean;
+  hasCrown?: boolean;
+  hasSparkles?: boolean;
+}
+
+export const WARDROBE_SKINS: WardrobeSkinOption[] = [
+  {
+    id: 'padrao',
+    name: 'Clássico Vittacare',
+    badge: 'Oficial da Equipe',
+    description:
+      'Traje original de cada função: jaleco clínico para Enfermagem, terno e saia executiva para Marketing e alta costura para as Sócias.',
+    previewBorder: 'border-slate-600',
+    accentHex: '#10b981',
+  },
+  {
+    id: 'dourada',
+    name: 'Gala Imperial Ouro 24k',
+    badge: 'Lendária · Luz Solar',
+    description:
+      'Traje cerimonial branco e ouro 24k com partículas luminosas e insígnia suprema Guardião Vittacare.',
+    previewBorder: 'border-amber-400',
+    accentHex: '#facc15',
+    hasSparkles: true,
+    hasCrown: true,
+  },
+  {
+    id: 'esmeralda',
+    name: 'Esmeralda Real Vittacare',
+    badge: 'Coleção Clínica',
+    description:
+      'Alta alfaiataria em verde-esmeralda profundo com acabamentos em platina, turquesa viva e broche oficial.',
+    previewBorder: 'border-emerald-400',
+    accentHex: '#10b981',
+    hasSparkles: true,
+  },
+  {
+    id: 'super_heroi',
+    name: 'Manto Super-Guardião',
+    badge: 'Especial · Com Capa & Visor',
+    description:
+      'Armadura heroica com capa vermelha/dourada esvoaçante em pixel art, visor luminoso e emblema de proteção materna.',
+    previewBorder: 'border-rose-400',
+    accentHex: '#f43f5e',
+    hasCape: true,
+    hasVisor: true,
+  },
+  {
+    id: 'cyber_neon',
+    name: 'Cyber-Saúde Neon 2099',
+    badge: 'Futurista · Holográfica',
+    description:
+      'Traje tecnológico de fibra escura com circuitos neon ciano e magenta, visor diagnóstico digital e botas propulsoras.',
+    previewBorder: 'border-cyan-400',
+    accentHex: '#06b6d4',
+    hasVisor: true,
+    hasSparkles: true,
+  },
+  {
+    id: 'gala_diamante',
+    name: 'Noite de Gala & Diamantes',
+    badge: 'Alta Costura · Tapete Vermelho',
+    description:
+      'Veludo azul meia-noite e preto absoluto com colar/lapela de diamantes cintilantes e detalhes prateados.',
+    previewBorder: 'border-indigo-400',
+    accentHex: '#818cf8',
+    hasSparkles: true,
+    hasCrown: true,
+  },
+  {
+    id: 'rosa_quartzo',
+    name: 'Aurora Quartzo & Pérola',
+    badge: 'Coleção Outubro Rosa',
+    description:
+      'Edição especial dedicada à prevenção e saúde da mulher em tons de quartzo rosa, pérola acetinada e ouro rosé.',
+    previewBorder: 'border-pink-400',
+    accentHex: '#ec4899',
+    hasSparkles: true,
+  },
+  {
+    id: 'chama_real',
+    name: 'Fênix Solar Rubi',
+    badge: 'Épica · Capa de Fogo',
+    description:
+      'Traje imponente em rubi imperial e âmbar ardente com capa solar e coroa de vitalidade.',
+    previewBorder: 'border-orange-400',
+    accentHex: '#f97316',
+    hasCape: true,
+    hasCrown: true,
+    hasSparkles: true,
+  },
+];
+
 export interface NurseCharacter {
   id: CharacterId;
   name: string;
