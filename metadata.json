@@ -1,0 +1,6 @@
+{
+  "name": "Guardiões Vittacare: Jornada do Cuidado",
+  "description": "Jogo educativo em estilo anime sobre saúde materna e feminina, com os enfermeiros Stephanie, Marcelo, Bianca e Leticia enfrentando a Sombra da Pressão (Fase 5) e a Sombra do Descuido (Fase 10) rumo à Clínica Vittacare.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
