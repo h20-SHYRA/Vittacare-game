@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Volume2,
@@ -22,6 +22,7 @@ import { MarioPlatformerGame } from './components/MarioPlatformerGame';
 import { VittacareFinale } from './components/VittacareFinale';
 import { WardrobeView } from './components/WardrobeView';
 import { PixelNurseAvatar } from './components/PixelNurseAvatar';
+import { PWAInstallButton, OfflineIndicator } from './components/PWAInstallButton';
 import { soundFX } from './utils/sound';
 
 type ActiveView = 'PLATFORMER' | 'WARDROBE' | 'MAP' | 'NURSES' | 'FINALE';
@@ -32,26 +33,58 @@ export default function App() {
   const [selectedCharacterIdx, setSelectedCharacterIdx] = useState<number>(0);
   const [soundMuted, setSoundMuted] = useState<boolean>(false);
 
-  // Wardrobe Skins State for all 10 characters
-  const [characterSkins, setCharacterSkins] = useState<Record<CharacterId, SkinId>>({
-    stephanie: 'padrao',
-    marcelo: 'padrao',
-    bianca: 'padrao',
-    leticia: 'padrao',
-    ronald: 'padrao',
-    nina: 'padrao',
-    samara: 'padrao',
-    leticia_mkt: 'padrao',
-    vivian: 'padrao',
-    barbara: 'padrao',
+  // Wardrobe Skins State for all 10 characters (Persisted in localStorage for Mobile PWA)
+  const [characterSkins, setCharacterSkins] = useState<Record<CharacterId, SkinId>>(() => {
+    try {
+      const saved = localStorage.getItem('vittacare_skins_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore storage errors
+    }
+    return {
+      stephanie: 'padrao',
+      marcelo: 'padrao',
+      bianca: 'padrao',
+      leticia: 'padrao',
+      ronald: 'padrao',
+      nina: 'padrao',
+      samara: 'padrao',
+      leticia_mkt: 'padrao',
+      vivian: 'padrao',
+      barbara: 'padrao',
+    };
   });
 
-  // Progression & Rewards State (Strict Sequential Unlocking)
-  const [completedPhases, setCompletedPhases] = useState<number[]>([]);
+  // Progression & Rewards State (Strict Sequential Unlocking, Persisted in localStorage)
+  const [completedPhases, setCompletedPhases] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem('vittacare_completed_phases_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore storage errors
+    }
+    return [];
+  });
   const [hasMedalGestacao, setHasMedalGestacao] = useState<boolean>(false);
   const [hasMedalDescuido, setHasMedalDescuido] = useState<boolean>(false);
   const [hasTrophyVittacare, setHasTrophyVittacare] = useState<boolean>(false);
   const [goldenSkinEquipped, setGoldenSkinEquipped] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vittacare_skins_v1', JSON.stringify(characterSkins));
+    } catch {
+      // ignore storage errors
+    }
+  }, [characterSkins]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vittacare_completed_phases_v1', JSON.stringify(completedPhases));
+    } catch {
+      // ignore storage errors
+    }
+  }, [completedPhases]);
 
   const maxUnlockedPhase = Math.min(
     17,
@@ -196,7 +229,9 @@ export default function App() {
           </button>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <PWAInstallButton />
+
           <button
             type="button"
             onClick={() => setActiveView('WARDROBE')}
@@ -244,6 +279,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
+      <OfflineIndicator />
       <main className="flex-1">
         {activeView === 'PLATFORMER' && (
           <MarioPlatformerGame
